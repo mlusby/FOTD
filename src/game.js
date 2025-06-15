@@ -1630,10 +1630,13 @@ class TherapySessionScene extends Phaser.Scene {
     }
 
     updateInteractionSelection() {
-        
-        // Clear previous response buttons
-        this.responseButtons.forEach(button => button.destroy());
-        this.responseButtons = [];
+        // Highlight selected interaction option
+        this.responseButtons.forEach((button, index) => {
+            if (button && button.setColor) {
+                const newColor = index === this.selectedResponse ? '#f39c12' : '#ecf0f1';
+                button.setColor(newColor);
+            }
+        });
         
         const responses = [
             "Tell me more about your transformation needs, Zara.",
@@ -1835,16 +1838,6 @@ class TherapySessionScene extends Phaser.Scene {
         };
         
         this.startTypewriterEffect(fullText, normalComplete, skipComplete);
-    }
-
-    updateInteractionSelection() {
-        // Highlight selected interaction option
-        this.responseButtons.forEach((button, index) => {
-            if (button && button.setColor) {
-                const newColor = index === this.selectedResponse ? '#f39c12' : '#ecf0f1';
-                button.setColor(newColor);
-            }
-        });
     }
     
     updateTopicSelection() {
