@@ -113,120 +113,79 @@ class ConversationSystem {
     }
     
     initializeSampleSnippets() {
-        // Zara snippets
-        this.snippets.set('zara_001', {
-            id: 'zara_001',
-            characterId: 'zara',
-            text: 'When I transform, I feel like I lose myself completely.',
-            characterTierRequirement: 1,
-            topic: 'Transformation Issues',
-            relationshipRequirements: {
-                trust: 10
-            },
-            categories: [
-                { category: 'Differentiation', polarity: 'negative', score: 3 },
-                { category: 'Anxiety Management', polarity: 'negative', score: 2 }
-            ]
+        // Load snippets from external data file
+        const snippetData = window.ZARA_FINN_SNIPPETS;
+        
+        Object.entries(snippetData).forEach(([topicKey, topicData]) => {
+            // Convert topic key to display name
+            const topicName = topicKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            
+            // Add Zara snippets for this topic
+            topicData.zara.forEach(snippet => {
+                this.snippets.set(snippet.id, {
+                    id: snippet.id,
+                    characterId: 'zara',
+                    text: snippet.text,
+                    characterTierRequirement: snippet.tier,
+                    topic: topicName,
+                    relationshipRequirements: {
+                        trust: snippet.trustRequired
+                    },
+                    categories: snippet.categories
+                });
+            });
+            
+            // Add Finn snippets for this topic
+            topicData.finn.forEach(snippet => {
+                this.snippets.set(snippet.id, {
+                    id: snippet.id,
+                    characterId: 'finn',
+                    text: snippet.text,
+                    characterTierRequirement: snippet.tier,
+                    topic: topicName,
+                    relationshipRequirements: {
+                        trust: snippet.trustRequired
+                    },
+                    categories: snippet.categories
+                });
+            });
+            
+            // Add "no more snippets" for this topic
+            this.snippets.set(`zara_no_more_${topicKey}`, {
+                id: `zara_no_more_${topicKey}`,
+                characterId: 'zara',
+                text: topicData.noMore.zara,
+                characterTierRequirement: 1,
+                topic: topicName,
+                isNoMoreSnippet: true,
+                relationshipRequirements: {},
+                categories: []
+            });
+            
+            this.snippets.set(`finn_no_more_${topicKey}`, {
+                id: `finn_no_more_${topicKey}`,
+                characterId: 'finn',
+                text: topicData.noMore.finn,
+                characterTierRequirement: 1,
+                topic: topicName,
+                isNoMoreSnippet: true,
+                relationshipRequirements: {},
+                categories: []
+            });
         });
         
-        this.snippets.set('zara_002', {
-            id: 'zara_002',
-            characterId: 'zara',
-            text: 'Finn always tries to help, but sometimes I need space to figure things out.',
-            characterTierRequirement: 1,
-            topic: 'Personal Boundaries',
-            relationshipRequirements: {
-                trust: 15
-            },
-            categories: [
-                { category: 'Boundary Clarity', polarity: 'positive', score: 2 },
-                { category: 'Validation Seeking', polarity: 'negative', score: 1 }
-            ]
+        console.log('[SNIPPETS] Loaded', this.snippets.size, 'total snippets from external data');
+    }
+    
+    // Get available topics for current relationship
+    getAvailableTopics() {
+        const topics = new Set();
+        this.snippets.forEach(snippet => {
+            if (!snippet.isNoMoreSnippet) {
+                topics.add(snippet.topic);
+            }
         });
-        
-        this.snippets.set('zara_003', {
-            id: 'zara_003',
-            characterId: 'zara',
-            text: 'Sometimes I wish he would just listen instead of trying to fix everything.',
-            characterTierRequirement: 1,
-            topic: 'Communication Patterns',
-            relationshipRequirements: {
-                trust: 20
-            },
-            categories: [
-                { category: 'Validation Seeking', polarity: 'positive', score: 2 },
-                { category: 'Boundary Clarity', polarity: 'positive', score: 1 }
-            ]
-        });
-        
-        // Finn snippets
-        this.snippets.set('finn_001', {
-            id: 'finn_001',
-            characterId: 'finn',
-            text: 'I just want to make sure she\'s safe when she transforms.',
-            characterTierRequirement: 1,
-            topic: 'Transformation Issues',
-            relationshipRequirements: {
-                trust: 10
-            },
-            categories: [
-                { category: 'Anxiety Management', polarity: 'negative', score: 2 },
-                { category: 'Boundary Clarity', polarity: 'negative', score: 1 }
-            ]
-        });
-        
-        this.snippets.set('finn_002', {
-            id: 'finn_002',
-            characterId: 'finn',
-            text: 'Maybe I do hover too much, but dragons are powerful creatures.',
-            characterTierRequirement: 1,
-            topic: 'Personal Boundaries',
-            relationshipRequirements: {
-                trust: 20
-            },
-            categories: [
-                { category: 'Differentiation', polarity: 'negative', score: 1 },
-                { category: 'Projection', polarity: 'positive', score: 2 }
-            ]
-        });
-        
-        this.snippets.set('finn_003', {
-            id: 'finn_003',
-            characterId: 'finn',
-            text: 'I try to support her, but I never know if I\'m saying the right thing.',
-            characterTierRequirement: 1,
-            topic: 'Communication Patterns',
-            relationshipRequirements: {
-                trust: 15
-            },
-            categories: [
-                { category: 'Validation Seeking', polarity: 'negative', score: 2 },
-                { category: 'Anxiety Management', polarity: 'negative', score: 1 }
-            ]
-        });
-        
-        // "No more snippets" snippets
-        this.snippets.set('zara_no_more_transformation', {
-            id: 'zara_no_more_transformation',
-            characterId: 'zara',
-            text: 'I think we\'ve covered everything about my transformation challenges for now.',
-            characterTierRequirement: 1,
-            topic: 'Transformation Issues',
-            isNoMoreSnippet: true,
-            relationshipRequirements: {},
-            categories: []
-        });
-        
-        this.snippets.set('finn_no_more_boundaries', {
-            id: 'finn_no_more_boundaries',
-            characterId: 'finn',
-            text: 'I don\'t have anything else to share about boundaries right now.',
-            characterTierRequirement: 1,
-            topic: 'Personal Boundaries',
-            isNoMoreSnippet: true,
-            relationshipRequirements: {},
-            categories: []
-        });
+        return Array.from(topics).sort();
     }
     
     // Get available snippets for a character based on current state
@@ -1364,13 +1323,8 @@ class TherapySessionScene extends Phaser.Scene {
         this.responseButtons.forEach(button => button.destroy());
         this.responseButtons = [];
         
-        // Define topics for snippet selection
-        const topics = [
-            "Transformation Issues",
-            "Communication Patterns",
-            "Personal Boundaries",
-            "Emotional Support"
-        ];
+        // Get available topics from conversation system
+        const topics = conversationSystem.getAvailableTopics();
 
         topics.forEach((topic, index) => {
             const yPos = 380 + (index * 30);
