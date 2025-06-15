@@ -36,7 +36,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 // Scene transition helper with debugging and Phaser-specific fixes
-function safeSceneTransition(scene, targetSceneName, method = 'switch') {
+function safeSceneTransition(scene, targetSceneName, method = 'start') {
     try {
         console.log(`[SCENE DEBUG] Attempting ${method} from ${scene.scene.key} to ${targetSceneName}`);
         console.log(`[SCENE DEBUG] Current scene state:`, {
@@ -53,9 +53,8 @@ function safeSceneTransition(scene, targetSceneName, method = 'switch') {
         }
         
         // CRITICAL FIX: Clear any pending timers/events and clean up display objects
-        if (scene.time) {
-            scene.time.removeAllEvents();
-        }
+        // NOTE: Don't clear ALL events as it would kill our own transition timer
+        // Instead, be more selective about cleanup
         
         // Fix for the setSize/cut error: Ensure all text objects are properly cleaned up
         if (scene.children) {
@@ -76,32 +75,29 @@ function safeSceneTransition(scene, targetSceneName, method = 'switch') {
         // Clear input states before transition to prevent sticky inputs
         globalInput.clearInputStates();
         
-        // Add a small delay to allow Phaser to finish any pending operations
-        scene.time.delayedCall(50, () => {
-            try {
-                // Perform the transition
-                if (method === 'switch') {
-                    scene.scene.switch(targetSceneName);
-                } else {
-                    scene.scene.start(targetSceneName);
-                }
-                console.log(`[SCENE DEBUG] Delayed transition to ${targetSceneName} completed successfully`);
-            } catch (delayedError) {
-                console.error(`[SCENE DEBUG] Error during delayed transition:`, {
-                    from: scene.scene.key,
-                    to: targetSceneName,
-                    method: method,
-                    error: delayedError.message,
-                    stack: delayedError.stack
-                });
-                // Fallback: try direct scene.start instead
-                try {
-                    scene.scene.start(targetSceneName);
-                } catch (fallbackError) {
-                    console.error('[SCENE DEBUG] Fallback transition also failed:', fallbackError);
-                }
-            }
-        });
+        // Execute scene transition immediately to avoid timer conflicts
+        try {
+            console.log(`[SCENE DEBUG] About to call scene.start(${targetSceneName})`);
+            console.log(`[SCENE DEBUG] Scene manager:`, scene.scene.manager);
+            console.log(`[SCENE DEBUG] Available scenes:`, Object.keys(scene.scene.manager.scenes));
+            
+            // Check if target scene exists
+            const targetScene = scene.scene.manager.getScene(targetSceneName);
+            console.log(`[SCENE DEBUG] Target scene found:`, targetScene ? true : false);
+            
+            // Call scene.start with detailed error handling
+            console.log(`[SCENE DEBUG] Current scene before start:`, scene.scene.key);
+            scene.scene.start(targetSceneName);
+            console.log(`[SCENE DEBUG] scene.start() call completed`);
+            
+        } catch (immediateError) {
+            console.error(`[SCENE DEBUG] Error during scene.start():`, {
+                from: scene.scene.key,
+                to: targetSceneName,
+                error: immediateError.message,
+                stack: immediateError.stack
+            });
+        }
         
         return true;
         
@@ -634,16 +630,18 @@ class TherapyOfficeScene extends Phaser.Scene {
         if (!globalInput.canAcceptInput()) return;
         
         if (index === 0) {
-            this.scene.start('PatientFilesScene');
+            console.log('[SCENE DEBUG] TherapyOffice selecting Patient Files');
+            safeSceneTransition(this, 'PatientFilesScene');
         } else if (index === 1) {
-            this.scene.start('TherapySessionScene');
+            console.log('[SCENE DEBUG] TherapyOffice selecting Begin Session');
+            safeSceneTransition(this, 'TherapySessionScene');
         }
     }
 
     goBack() {
         if (!globalInput.canAcceptInput()) return;
         console.log('[SCENE DEBUG] TherapyOfficeScene goBack() called');
-        safeSceneTransition(this, 'MainMenuScene', 'switch');
+        safeSceneTransition(this, 'MainMenuScene');
     }
 
     update() {
@@ -787,7 +785,7 @@ class PatientFilesScene extends Phaser.Scene {
     goBack() {
         if (!globalInput.canAcceptInput()) return;
         console.log('[SCENE DEBUG] PatientFilesScene goBack() called');
-        safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
+        safeSceneTransition(this, 'TherapyOfficeScene');
     }
 
     update() {
@@ -831,8 +829,13 @@ class TherapySessionScene extends Phaser.Scene {
     }
 
     create() {
-        // Session room background
-        this.add.rectangle(400, 300, 800, 600, 0x2c3e50);
+        try {
+            console.log('[THERAPY SESSION] TherapySessionScene.create() called!');
+            console.log('[THERAPY SESSION] Scene key:', this.scene.key);
+            console.log('[THERAPY SESSION] This scene is active:', this.scene.isActive());
+            
+            // Session room background
+            this.add.rectangle(400, 300, 800, 600, 0x2c3e50);
         
         // Title
         this.add.text(400, 50, 'Therapy Session - Zara & Finn', {
@@ -865,19 +868,83 @@ class TherapySessionScene extends Phaser.Scene {
 
         // Dialogue area - moved higher to make room for response buttons
         this.dialogueBox = this.add.rectangle(400, 320, 750, 80, 0x34495e);
-        this.dialogueText = this.add.text(75, 320, 'Zara: "He never understands my need for personal space when I transform..."', {
+        this.dialogueText = this.add.text(75, 320, '', {
             fontSize: '16px',
             fill: '#ecf0f1',
             fontFamily: 'Arial',
             wordWrap: { width: 650 }
         }).setOrigin(0, 0.5);  // Left-aligned to prevent shifting
 
-        // Response options
-        this.createResponseOptions();
+        // Start initial dialogue with typewriter effect
+        const initialText = 'Zara: "He never understands my need for personal space when I transform..."';
+        this.startTypewriterEffect(initialText, () => {
+            console.log('[TYPEWRITER DEBUG] Initial dialogue completed, creating response options');
+            this.createSimpleResponseOptions();
+        });
         
         // Set up keyboard controls
         this.cursors = this.input.keyboard.createCursorKeys();
         this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+        
+        console.log('[THERAPY SESSION] TherapySessionScene.create() completed successfully!');
+        
+        // Check scene status after a brief delay
+        this.time.delayedCall(200, () => {
+            console.log('[THERAPY SESSION] Status check after 200ms:');
+            console.log('[THERAPY SESSION] Scene active:', this.scene.isActive());
+            console.log('[THERAPY SESSION] Scene visible:', this.scene.isVisible());
+            console.log('[THERAPY SESSION] This scene key:', this.scene.key);
+        });
+        
+        } catch (createError) {
+            console.error('[THERAPY SESSION] Error in TherapySessionScene.create():', {
+                message: createError.message,
+                stack: createError.stack
+            });
+            // Fallback to office scene if create fails
+            this.time.delayedCall(100, () => {
+                this.scene.start('TherapyOfficeScene');
+            });
+        }
+    }
+
+    createSimpleResponseOptions() {
+        console.log('[SIMPLE RESPONSE] Creating simple response options');
+        
+        // Clear previous response buttons
+        this.responseButtons.forEach(button => button.destroy());
+        this.responseButtons = [];
+        
+        const responses = [
+            "1. Tell me more about your transformation needs, Zara.",
+            "2. Finn, how do you feel when Zara transforms?", 
+            "3. Let's explore communication strategies for this."
+        ];
+
+        responses.forEach((response, index) => {
+            const yPos = 380 + (index * 30);
+            console.log('[SIMPLE RESPONSE] Creating button', index, 'at Y:', yPos);
+            
+            // Create simple text without complex styling
+            const button = this.add.text(400, yPos, response, {
+                fontSize: '16px',
+                fill: '#ffffff',
+                fontFamily: 'Arial'
+            }).setOrigin(0.5);
+
+            button.setInteractive();
+            button.on('pointerdown', () => {
+                console.log('[SIMPLE RESPONSE] Button', index, 'clicked');
+                this.handleResponse(index);
+            });
+            
+            this.responseButtons.push(button);
+        });
+        
+        this.selectedResponse = 0;
+        this.awaitingInput = true;
+        console.log('[SIMPLE RESPONSE] Simple response options created successfully');
+        this.updateResponseSelection();
     }
 
     createResponseOptions() {
@@ -894,27 +961,74 @@ class TherapySessionScene extends Phaser.Scene {
         ];
 
         console.log('[RESPONSE DEBUG] Creating', responses.length, 'response buttons');
+        console.log('[RESPONSE DEBUG] Scene dimensions - width:', this.cameras.main.width, 'height:', this.cameras.main.height);
+        console.log('[RESPONSE DEBUG] Scene center X:', this.cameras.main.centerX, 'Y:', this.cameras.main.centerY);
         
         responses.forEach((response, index) => {
-            const yPos = 380 + (index * 25); // Move response buttons higher on screen
+            const yPos = 380 + (index * 25);
+            console.log('[RESPONSE DEBUG] Creating button', index, 'at position X:400, Y:', yPos);
+            
+            // Create text without problematic style properties first
             const button = this.add.text(400, yPos, `${index + 1}. ${response}`, {
-                fontSize: '14px',  
-                fill: '#95a5a6',
-                fontFamily: 'Arial',
-                wordWrap: { width: 600 },  
-                backgroundColor: '#2c3e50',  // Better contrast background
-                padding: { x: 8, y: 4 }     
+                fontSize: '18px',
+                fill: '#ffffff',
+                fontFamily: 'Arial'
             }).setOrigin(0.5);
+            
+            // Apply background styling separately
+            button.setBackgroundColor('#000000');
+            button.setPadding(12, 8, 12, 8);
 
+            // Comprehensive button debugging
+            console.log('[RESPONSE DEBUG] Button', index, 'created with properties:', {
+                x: button.x,
+                y: button.y,
+                width: button.width,
+                height: button.height,
+                visible: button.visible,
+                active: button.active,
+                depth: button.depth,
+                text: button.text,
+                style: button.style
+            });
+
+            // Force visibility and depth
+            button.setVisible(true);
+            button.setActive(true);
+            button.setDepth(1000); // Put on top of everything
+            
             button.setInteractive();
-            button.on('pointerdown', () => this.handleResponse(index));
+            button.on('pointerdown', () => {
+                console.log('[RESPONSE DEBUG] Button', index, 'clicked!');
+                this.handleResponse(index);
+            });
+            
             this.responseButtons.push(button);
-            console.log('[RESPONSE DEBUG] Created response button', index, 'at Y position', yPos, 'with text:', `${index + 1}. ${response}`);
+            console.log('[RESPONSE DEBUG] Button', index, 'added to responseButtons array. Array length now:', this.responseButtons.length);
         });
         
         this.selectedResponse = 0;
         this.awaitingInput = true;
-        console.log('[RESPONSE DEBUG] Set awaitingInput to true, calling updateResponseSelection');
+        console.log('[RESPONSE DEBUG] Set awaitingInput to true, total buttons created:', this.responseButtons.length);
+        
+        // Add bright red test rectangles at the same positions to verify rendering
+        console.log('[RESPONSE DEBUG] Adding test rectangles for visibility debugging');
+        for (let i = 0; i < 3; i++) {
+            const testRect = this.add.rectangle(400, 380 + (i * 25), 200, 20, 0xff0000);
+            testRect.setDepth(999);
+            console.log('[RESPONSE DEBUG] Added test rectangle', i, 'at Y:', 380 + (i * 25));
+        }
+        
+        // Debug the scene's display list
+        console.log('[RESPONSE DEBUG] Scene children count:', this.children.list.length);
+        console.log('[RESPONSE DEBUG] Last 8 children in scene:', this.children.list.slice(-8).map(child => ({
+            type: child.type,
+            x: child.x,
+            y: child.y,
+            visible: child.visible,
+            text: child.text || 'no text'
+        })));
+        
         this.updateResponseSelection();
     }
     
@@ -936,7 +1050,7 @@ class TherapySessionScene extends Phaser.Scene {
                 // Test if first button is corrupted
                 try {
                     if (this.responseButtons[0] && this.responseButtons[0].setColor) {
-                        this.responseButtons[0].setColor('#95a5a6'); // Test call
+                        this.responseButtons[0].setColor('#ecf0f1'); // Test call
                     }
                 } catch (testError) {
                     if (testError.message.includes('data.cut')) {
@@ -954,7 +1068,7 @@ class TherapySessionScene extends Phaser.Scene {
             // Normal highlighting if buttons are healthy
             this.responseButtons.forEach((button, index) => {
                 if (button && button.setColor) {
-                    const newColor = index === this.selectedResponse ? '#3498db' : '#95a5a6';
+                    const newColor = index === this.selectedResponse ? '#f39c12' : '#ecf0f1';
                     console.log(`[SELECTION DEBUG] TherapySession setting response button ${index} to color ${newColor}`);
                     button.setColor(newColor);
                 }
@@ -986,13 +1100,13 @@ class TherapySessionScene extends Phaser.Scene {
 
         responses.forEach((response, index) => {
             const button = this.add.text(400, 380 + (index * 25), `${index + 1}. ${response}`, {
-                fontSize: '14px',
-                fill: '#95a5a6',
-                fontFamily: 'Arial',
-                wordWrap: { width: 600 },
-                backgroundColor: '#2c3e50',
-                padding: { x: 8, y: 4 }
+                fontSize: '18px',
+                fill: '#ffffff',
+                fontFamily: 'Arial'
             }).setOrigin(0.5);
+            
+            button.setBackgroundColor('#000000');
+            button.setPadding(12, 8, 12, 8);
 
             button.setInteractive();
             button.on('pointerdown', () => this.handleResponse(index));
@@ -1036,7 +1150,7 @@ class TherapySessionScene extends Phaser.Scene {
                 console.log('[TYPEWRITER DEBUG] Max interactions reached, transitioning to review scene');
                 this.time.delayedCall(1000, () => {
                     console.log('[SCENE DEBUG] TherapySessionScene completing session, transitioning to review');
-                    safeSceneTransition(this, 'SessionReviewScene', 'switch');
+                    safeSceneTransition(this, 'SessionReviewScene');
                 });
             } else {
                 // Show new response options after a brief pause
@@ -1050,6 +1164,9 @@ class TherapySessionScene extends Phaser.Scene {
     }
     
     startTypewriterEffect(fullText, onComplete) {
+        console.log('[TYPEWRITER DEBUG] startTypewriterEffect called with text length:', fullText.length);
+        console.log('[TYPEWRITER DEBUG] onComplete callback provided:', !!onComplete);
+        
         // Clear any existing typewriter timer
         if (this.typewriterTimer) {
             this.typewriterTimer.destroy();
@@ -1057,6 +1174,7 @@ class TherapySessionScene extends Phaser.Scene {
         
         // Start with empty text
         this.dialogueText.setText('');
+        console.log('[TYPEWRITER DEBUG] Cleared text, starting typewriter');
         
         let currentIndex = 0;
         const typeSpeed = 30; // milliseconds per character
@@ -1064,6 +1182,7 @@ class TherapySessionScene extends Phaser.Scene {
         this.typewriterTimer = this.time.addEvent({
             delay: typeSpeed,
             callback: () => {
+                console.log('[TYPEWRITER DEBUG] Timer callback, currentIndex:', currentIndex, 'of', fullText.length);
                 if (currentIndex < fullText.length) {
                     // Add next character
                     const displayText = fullText.substring(0, currentIndex + 1);
@@ -1082,8 +1201,10 @@ class TherapySessionScene extends Phaser.Scene {
                     }
                 }
             },
-            repeat: fullText.length - 1
+            repeat: fullText.length // Need one extra callback to trigger completion
         });
+        
+        console.log('[TYPEWRITER DEBUG] Timer created with', fullText.length, 'repeats');
     }
     
     update() {
@@ -1219,7 +1340,7 @@ class SessionReviewScene extends Phaser.Scene {
         backButton.on('pointerdown', () => {
             if (globalInput.canAcceptInput()) {
                 console.log('[SCENE DEBUG] SessionReviewScene Return to Office clicked');
-                safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
+                safeSceneTransition(this, 'TherapyOfficeScene');
             }
         });
         
@@ -1233,7 +1354,7 @@ class SessionReviewScene extends Phaser.Scene {
         if (this.enterKey.justDown || this.escKey.justDown) {
             if (globalInput.canAcceptInput()) {
                 console.log('[SCENE DEBUG] SessionReviewScene keyboard input detected');
-                safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
+                safeSceneTransition(this, 'TherapyOfficeScene');
             }
         }
         
@@ -1248,7 +1369,7 @@ class SessionReviewScene extends Phaser.Scene {
                                 globalInput.wasNamedButtonJustPressed(gamepad, 'B');
                 if (aPressed || bPressed) {
                     console.log('[SCENE DEBUG] SessionReviewScene controller input detected', {aPressed, bPressed});
-                    safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
+                    safeSceneTransition(this, 'TherapyOfficeScene');
                 }
             }
         }
