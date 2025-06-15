@@ -1412,7 +1412,7 @@ class TherapySessionScene extends Phaser.Scene {
         
         this.selectedResponse = 0;
         this.awaitingInput = true;
-        this.updateResponseSelection();
+        this.updateInteractionSelection();
     }
     
     selectTopic(topicIndex, topicName) {
@@ -1497,7 +1497,7 @@ class TherapySessionScene extends Phaser.Scene {
         
         this.selectedResponse = 0;
         this.awaitingInput = true;
-        this.updateResponseSelection();
+        this.updateInteractionSelection();
     }
     
     handleInteraction(optionIndex) {
@@ -1674,7 +1674,7 @@ class TherapySessionScene extends Phaser.Scene {
             button.setInteractive();
             button.on('pointerdown', () => {
                 console.log('[RESPONSE DEBUG] Button', index, 'clicked!');
-                this.handleResponse(index);
+                // OLD METHOD REMOVED - handleResponse no longer exists
             });
             
             this.responseButtons.push(button);
@@ -1683,7 +1683,7 @@ class TherapySessionScene extends Phaser.Scene {
         
         this.selectedResponse = 0;
         this.awaitingInput = true;
-        this.updateResponseSelection();
+        this.updateInteractionSelection();
     }
     
     updateResponseSelection() {
@@ -1715,7 +1715,7 @@ class TherapySessionScene extends Phaser.Scene {
             }
             
             if (needsRebuild) {
-                this.rebuildResponseButtons();
+                // OLD METHOD REMOVED - rebuildResponseButtons no longer exists
                 return; // Exit early, let the delayed updateResponseSelection handle highlighting
             }
             
@@ -1730,7 +1730,7 @@ class TherapySessionScene extends Phaser.Scene {
         } catch (error) {
             console.error('[TEXT DEBUG] Error in TherapySessionScene updateResponseSelection:', error.message);
             // Try to rebuild on any error
-            this.rebuildResponseButtons();
+            // OLD METHOD REMOVED - rebuildResponseButtons no longer exists
         }
     }
     
@@ -1769,7 +1769,7 @@ class TherapySessionScene extends Phaser.Scene {
         
         // Highlight after rebuild
         this.time.delayedCall(10, () => {
-            this.updateResponseSelection();
+            this.updateInteractionSelection();
         });
     }
 
@@ -1989,7 +1989,7 @@ class TherapySessionScene extends Phaser.Scene {
             if (now - globalInput.lastInputTime > 50) { // Much shorter delay for dialogue
                 globalInput.lastInputTime = now;
                 this.selectedResponse = Math.max(0, this.selectedResponse - 1);
-                this.updateResponseSelection();
+                this.updateInteractionSelection();
             }
         }
         
@@ -1999,12 +1999,12 @@ class TherapySessionScene extends Phaser.Scene {
             if (now - globalInput.lastInputTime > 50) { // Much shorter delay for dialogue
                 globalInput.lastInputTime = now;
                 this.selectedResponse = Math.min(this.responseButtons.length - 1, this.selectedResponse + 1);
-                this.updateResponseSelection();
+                this.updateInteractionSelection();
             }
         }
         
         if (this.enterKey.justDown) {
-            this.handleResponse(this.selectedResponse);
+            // OLD METHOD REMOVED - handleResponse no longer exists
         }
         
         // Controller input
@@ -2021,7 +2021,7 @@ class TherapySessionScene extends Phaser.Scene {
                         globalInput.lastInputTime = now;
                         console.log('[NAVIGATION DEBUG] TherapySession navigating up, from', this.selectedResponse, 'to', Math.max(0, this.selectedResponse - 1));
                         this.selectedResponse = Math.max(0, this.selectedResponse - 1);
-                        this.updateResponseSelection();
+                        this.updateInteractionSelection();
                     }
                 }
                 
@@ -2035,7 +2035,7 @@ class TherapySessionScene extends Phaser.Scene {
                         globalInput.lastInputTime = now;
                         console.log('[NAVIGATION DEBUG] TherapySession navigating down, from', this.selectedResponse, 'to', Math.min(this.responseButtons.length - 1, this.selectedResponse + 1));
                         this.selectedResponse = Math.min(this.responseButtons.length - 1, this.selectedResponse + 1);
-                        this.updateResponseSelection();
+                        this.updateInteractionSelection();
                     }
                 }
                 
@@ -2043,7 +2043,7 @@ class TherapySessionScene extends Phaser.Scene {
                 const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
                                 globalInput.wasNamedButtonJustPressed(gamepad, 'A');
                 if (aPressed) {
-                    this.handleResponse(this.selectedResponse);
+                    // OLD METHOD REMOVED - handleResponse no longer exists
                 }
             }
         }
