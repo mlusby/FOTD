@@ -1638,16 +1638,6 @@ class TherapySessionScene extends Phaser.Scene {
             }
         });
         
-        const responses = [
-            "Tell me more about your transformation needs, Zara.",
-            "Finn, how do you feel when Zara transforms?",
-            "Let's explore communication strategies for this."
-        ];
-
-        console.log('[RESPONSE DEBUG] Creating', responses.length, 'response buttons');
-        console.log('[RESPONSE DEBUG] Scene dimensions - width:', this.cameras.main.width, 'height:', this.cameras.main.height);
-        console.log('[RESPONSE DEBUG] Scene center X:', this.cameras.main.centerX, 'Y:', this.cameras.main.centerY);
-        
         responses.forEach((response, index) => {
             const yPos = 380 + (index * 25);
             console.log('[RESPONSE DEBUG] Creating button', index, 'at position X:400, Y:', yPos);
