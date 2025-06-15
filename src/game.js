@@ -1629,8 +1629,9 @@ class TherapySessionScene extends Phaser.Scene {
         });
     }
 
-    createResponseOptions() {
-        console.log('[RESPONSE DEBUG] createResponseOptions called');
+    // OLD METHODS REMOVED - Now using snippet-based system
+    
+    startTypewriterEffect(fullText, onComplete, onSkip) {
         
         // Clear previous response buttons
         this.responseButtons.forEach(button => button.destroy());
@@ -1813,9 +1814,9 @@ class TherapySessionScene extends Phaser.Scene {
                     safeSceneTransition(this, 'SessionReviewScene');
                 });
             } else {
-                // Show new response options after a brief pause
+                // Show new interaction options after a brief pause
                 this.time.delayedCall(800, () => {
-                    this.createResponseOptions();
+                    this.createInteractionOptions();
                 });
             }
         };
@@ -1830,12 +1831,32 @@ class TherapySessionScene extends Phaser.Scene {
                     safeSceneTransition(this, 'SessionReviewScene');
                 });
             } else {
-                // Show response options immediately when skipped
-                this.createResponseOptions();
+                // Show interaction options immediately when skipped
+                this.createInteractionOptions();
             }
         };
         
         this.startTypewriterEffect(fullText, normalComplete, skipComplete);
+    }
+    
+    updateInteractionSelection() {
+        // Highlight selected interaction option
+        this.responseButtons.forEach((button, index) => {
+            if (button && button.setColor) {
+                const newColor = index === this.selectedResponse ? '#f39c12' : '#ecf0f1';
+                button.setColor(newColor);
+            }
+        });
+    }
+    
+    updateTopicSelection() {
+        // Highlight selected topic option
+        this.responseButtons.forEach((button, index) => {
+            if (button && button.setColor) {
+                const newColor = index === this.selectedResponse ? '#f39c12' : '#ecf0f1';
+                button.setColor(newColor);
+            }
+        });
     }
     
     startTypewriterEffect(fullText, onComplete, onSkip) {
