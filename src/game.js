@@ -892,6 +892,9 @@ class TherapySessionScene extends Phaser.Scene {
         this.awaitingInput = false;
         this.typewriterActive = false;
         this.typewriterTimer = null;
+        this.currentFullText = null;
+        this.currentOnComplete = null;
+        this.currentOnSkip = null;
     }
 
     create() {
@@ -937,10 +940,29 @@ class TherapySessionScene extends Phaser.Scene {
             wordWrap: { width: 650 }
         }).setOrigin(0, 0.5);  // Left-aligned to prevent shifting
 
-        // Start initial dialogue with typewriter effect
-        const initialText = 'Zara: "He never understands my need for personal space when I transform..."';
-        this.startTypewriterEffect(initialText, () => {
-            this.createSimpleResponseOptions();
+        // Initialize flags properly before starting typewriter
+        this.awaitingInput = false;
+        this.typewriterActive = false;
+        console.log('[SCENE DEBUG] TherapySession create() - initialized flags');
+        
+        // Start initial dialogue with typewriter effect after a small delay to ensure scene is ready
+        this.time.delayedCall(100, () => {
+            console.log('[SCENE DEBUG] Starting initial typewriter effect');
+            const initialText = 'Zara: "He never understands my need for personal space when I transform..."';
+            const normalCallback = () => {
+                console.log('[SCENE DEBUG] Normal callback triggered for initial dialogue');
+                // Normal delay before showing options
+                this.time.delayedCall(400, () => {
+                    console.log('[SCENE DEBUG] Creating simple response options after normal delay');
+                    this.createSimpleResponseOptions();
+                });
+            };
+            const skipCallback = () => {
+                console.log('[SCENE DEBUG] Skip callback triggered for initial dialogue');
+                // Immediate options when skipped
+                this.createSimpleResponseOptions();
+            };
+            this.startTypewriterEffect(initialText, normalCallback, skipCallback);
         });
         
         // Set up keyboard controls
@@ -1167,8 +1189,9 @@ class TherapySessionScene extends Phaser.Scene {
         ];
 
         const fullText = responses[responseIndex];
-        this.startTypewriterEffect(fullText, () => {
-            // Callback when typewriter is complete
+        
+        // Normal completion callback (with delay)
+        const normalComplete = () => {
             this.typewriterActive = false;
             
             if (this.interactionCount >= this.maxInteractions) {
@@ -1181,17 +1204,46 @@ class TherapySessionScene extends Phaser.Scene {
                     this.createResponseOptions();
                 });
             }
-        });
+        };
+        
+        // Skip completion callback (immediate)
+        const skipComplete = () => {
+            this.typewriterActive = false;
+            
+            if (this.interactionCount >= this.maxInteractions) {
+                // Still use a small delay for scene transition, but much shorter
+                this.time.delayedCall(200, () => {
+                    safeSceneTransition(this, 'SessionReviewScene');
+                });
+            } else {
+                // Show response options immediately when skipped
+                this.createResponseOptions();
+            }
+        };
+        
+        this.startTypewriterEffect(fullText, normalComplete, skipComplete);
     }
     
-    startTypewriterEffect(fullText, onComplete) {
+    startTypewriterEffect(fullText, onComplete, onSkip) {
+        console.log('[TYPEWRITER DEBUG] Starting typewriter effect with text:', fullText.substring(0, 50) + '...');
+        
         // Clear any existing typewriter timer
         if (this.typewriterTimer) {
             this.typewriterTimer.destroy();
         }
         
+        // Set typewriter as active for skip detection
+        this.typewriterActive = true;
+        console.log('[TYPEWRITER DEBUG] Set typewriterActive to true');
+        
+        // Store full text and completion callbacks for skip functionality
+        this.currentFullText = fullText;
+        this.currentOnComplete = onComplete;
+        this.currentOnSkip = onSkip || onComplete; // Use skip callback if provided, otherwise use normal callback
+        
         // Start with empty text
         this.dialogueText.setText('');
+        console.log('[TYPEWRITER DEBUG] Cleared dialogue text, starting timer');
         
         let currentIndex = 0;
         const typeSpeed = 30; // milliseconds per character
@@ -1204,21 +1256,87 @@ class TherapySessionScene extends Phaser.Scene {
                     const displayText = fullText.substring(0, currentIndex + 1);
                     this.dialogueText.setText(displayText);
                     currentIndex++;
+                    if (currentIndex === 1) {
+                        console.log('[TYPEWRITER DEBUG] First character displayed');
+                    }
                 } else {
-                    // Typewriter complete
+                    // Typewriter complete naturally - use normal callback with delay
+                    console.log('[TYPEWRITER DEBUG] Typewriter completed naturally');
                     this.typewriterTimer.destroy();
                     this.typewriterTimer = null;
+                    this.typewriterActive = false;
+                    this.currentFullText = null;
+                    this.currentOnComplete = null;
+                    this.currentOnSkip = null;
                     if (onComplete) {
+                        console.log('[TYPEWRITER DEBUG] Calling normal completion callback');
                         onComplete();
                     }
                 }
             },
             repeat: fullText.length // Need one extra callback to trigger completion
         });
+        
+        console.log('[TYPEWRITER DEBUG] Timer created with repeat:', fullText.length);
+    }
+    
+    skipTypewriterEffect() {
+        console.log('[TYPEWRITER DEBUG] Skip called, typewriterActive:', this.typewriterActive, 'currentFullText exists:', !!this.currentFullText);
+        if (this.typewriterActive && this.currentFullText) {
+            console.log('[TYPEWRITER DEBUG] Skipping typewriter effect');
+            // Stop the typewriter timer
+            if (this.typewriterTimer) {
+                this.typewriterTimer.destroy();
+                this.typewriterTimer = null;
+            }
+            
+            // Display the full text immediately
+            this.dialogueText.setText(this.currentFullText);
+            
+            // Mark typewriter as inactive
+            this.typewriterActive = false;
+            
+            // Call the skip callback (immediate) instead of normal callback (delayed)
+            if (this.currentOnSkip) {
+                const callback = this.currentOnSkip;
+                this.currentFullText = null;
+                this.currentOnComplete = null;
+                this.currentOnSkip = null;
+                console.log('[TYPEWRITER DEBUG] Calling skip completion callback');
+                // Call immediately without delay
+                callback();
+            }
+        }
     }
     
     update() {
-        if (!this.awaitingInput || this.typewriterActive) return;
+        // Check for A button press during typewriter animation to skip
+        if (this.typewriterActive) {
+            // Controller input for skipping typewriter
+            if (this.input.gamepad.total) {
+                const gamepad = this.input.gamepad.getPad(0);
+                if (gamepad) {
+                    // A button to skip dialogue animation
+                    const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
+                                    globalInput.wasNamedButtonJustPressed(gamepad, 'A');
+                    if (aPressed) {
+                        this.skipTypewriterEffect();
+                        return;
+                    }
+                }
+            }
+            
+            // Keyboard support for skipping (spacebar or enter)
+            if (this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).justDown ||
+                this.enterKey.justDown) {
+                this.skipTypewriterEffect();
+                return;
+            }
+            
+            return; // Don't process other input during typewriter
+        }
+        
+        if (!this.awaitingInput) return;
         
         // Keyboard controls with faster response for dialogue
         if (this.cursors.up.justDown) {
