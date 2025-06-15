@@ -119,6 +119,7 @@ class ConversationSystem {
             characterId: 'zara',
             text: 'When I transform, I feel like I lose myself completely.',
             characterTierRequirement: 1,
+            topic: 'Transformation Issues',
             relationshipRequirements: {
                 trust: 10
             },
@@ -133,6 +134,7 @@ class ConversationSystem {
             characterId: 'zara',
             text: 'Finn always tries to help, but sometimes I need space to figure things out.',
             characterTierRequirement: 1,
+            topic: 'Personal Boundaries',
             relationshipRequirements: {
                 trust: 15
             },
@@ -142,12 +144,28 @@ class ConversationSystem {
             ]
         });
         
+        this.snippets.set('zara_003', {
+            id: 'zara_003',
+            characterId: 'zara',
+            text: 'Sometimes I wish he would just listen instead of trying to fix everything.',
+            characterTierRequirement: 1,
+            topic: 'Communication Patterns',
+            relationshipRequirements: {
+                trust: 20
+            },
+            categories: [
+                { category: 'Validation Seeking', polarity: 'positive', score: 2 },
+                { category: 'Boundary Clarity', polarity: 'positive', score: 1 }
+            ]
+        });
+        
         // Finn snippets
         this.snippets.set('finn_001', {
             id: 'finn_001',
             characterId: 'finn',
             text: 'I just want to make sure she\'s safe when she transforms.',
             characterTierRequirement: 1,
+            topic: 'Transformation Issues',
             relationshipRequirements: {
                 trust: 10
             },
@@ -162,6 +180,7 @@ class ConversationSystem {
             characterId: 'finn',
             text: 'Maybe I do hover too much, but dragons are powerful creatures.',
             characterTierRequirement: 1,
+            topic: 'Personal Boundaries',
             relationshipRequirements: {
                 trust: 20
             },
@@ -169,6 +188,44 @@ class ConversationSystem {
                 { category: 'Differentiation', polarity: 'negative', score: 1 },
                 { category: 'Projection', polarity: 'positive', score: 2 }
             ]
+        });
+        
+        this.snippets.set('finn_003', {
+            id: 'finn_003',
+            characterId: 'finn',
+            text: 'I try to support her, but I never know if I\'m saying the right thing.',
+            characterTierRequirement: 1,
+            topic: 'Communication Patterns',
+            relationshipRequirements: {
+                trust: 15
+            },
+            categories: [
+                { category: 'Validation Seeking', polarity: 'negative', score: 2 },
+                { category: 'Anxiety Management', polarity: 'negative', score: 1 }
+            ]
+        });
+        
+        // "No more snippets" snippets
+        this.snippets.set('zara_no_more_transformation', {
+            id: 'zara_no_more_transformation',
+            characterId: 'zara',
+            text: 'I think we\'ve covered everything about my transformation challenges for now.',
+            characterTierRequirement: 1,
+            topic: 'Transformation Issues',
+            isNoMoreSnippet: true,
+            relationshipRequirements: {},
+            categories: []
+        });
+        
+        this.snippets.set('finn_no_more_boundaries', {
+            id: 'finn_no_more_boundaries',
+            characterId: 'finn',
+            text: 'I don\'t have anything else to share about boundaries right now.',
+            characterTierRequirement: 1,
+            topic: 'Personal Boundaries',
+            isNoMoreSnippet: true,
+            relationshipRequirements: {},
+            categories: []
         });
     }
     
@@ -302,6 +359,61 @@ class ConversationSystem {
                 console.log(`[TIER PROGRESSION] ${character.name} advanced to tier ${nextTier}`);
             }
         }
+    }
+    
+    // Get available snippets for a character and topic, excluding already used ones
+    getAvailableSnippetsByTopic(characterId, topicName) {
+        const character = this.characters.get(characterId);
+        const relationship = this.relationships.get('zara_finn');
+        const currentSession = this.sessionNotes.get(this.playerData.currentSessionId);
+        
+        if (!character || !relationship) return [];
+        
+        // Get IDs of snippets already used in this session
+        const usedSnippetIds = new Set();
+        if (currentSession) {
+            currentSession.snippets.forEach(s => usedSnippetIds.add(s.id));
+        }
+        
+        return Array.from(this.snippets.values())
+            .filter(snippet => {
+                if (snippet.characterId !== characterId) return false;
+                if (snippet.topic !== topicName) return false;
+                if (snippet.isNoMoreSnippet) return false; // Exclude "no more" snippets from normal selection
+                if (usedSnippetIds.has(snippet.id)) return false; // Exclude already used snippets
+                if (snippet.characterTierRequirement > character.currentTier) return false;
+                
+                // Check relationship requirements
+                for (const [attr, required] of Object.entries(snippet.relationshipRequirements || {})) {
+                    if (relationship.attributes[attr] < required) return false;
+                }
+                
+                return true;
+            });
+    }
+    
+    // Get "no more snippets available" snippet for a character and topic
+    getNoMoreSnippetsSnippet(characterId, topicName) {
+        const character = this.characters.get(characterId);
+        const relationship = this.relationships.get('zara_finn');
+        
+        if (!character || !relationship) return null;
+        
+        const noMoreSnippet = Array.from(this.snippets.values())
+            .find(snippet => {
+                return snippet.characterId === characterId &&
+                       snippet.topic === topicName &&
+                       snippet.isNoMoreSnippet === true &&
+                       snippet.characterTierRequirement <= character.currentTier;
+            });
+        
+        return noMoreSnippet || null;
+    }
+    
+    // Get current session snippets for notes review
+    getCurrentSessionSnippets() {
+        const currentSession = this.sessionNotes.get(this.playerData.currentSessionId);
+        return currentSession ? currentSession.snippets : [];
     }
 }
 
@@ -1223,10 +1335,10 @@ class TherapySessionScene extends Phaser.Scene {
         this.typewriterActive = false;
         console.log('[SCENE DEBUG] TherapySession create() - initialized flags');
         
-        // Start session with snippet system after a small delay to ensure scene is ready
+        // Start session with topic selection after a small delay to ensure scene is ready
         this.time.delayedCall(100, () => {
             console.log('[SCENE DEBUG] Starting snippet-based session');
-            this.deliverNextSnippet();
+            this.showTopicSelection();
         });
         
         // Set up keyboard controls
@@ -1245,21 +1357,71 @@ class TherapySessionScene extends Phaser.Scene {
         }
     }
 
-    deliverNextSnippet() {
-        console.log('[SNIPPET DEBUG] Delivering next snippet');
+    showTopicSelection() {
+        console.log('[TOPIC DEBUG] Showing topic selection for', this.currentSpeaker);
         
-        // Get available snippets for current speaker
-        const availableSnippets = conversationSystem.getAvailableSnippets(this.currentSpeaker);
-        console.log('[SNIPPET DEBUG] Available snippets for', this.currentSpeaker, ':', availableSnippets.length);
+        // Clear previous response buttons
+        this.responseButtons.forEach(button => button.destroy());
+        this.responseButtons = [];
         
+        // Define topics for snippet selection
+        const topics = [
+            "Transformation Issues",
+            "Communication Patterns",
+            "Personal Boundaries",
+            "Emotional Support"
+        ];
+
+        topics.forEach((topic, index) => {
+            const yPos = 380 + (index * 30);
+            
+            const button = this.add.text(400, yPos, `${index + 1}. ${topic}`, {
+                fontSize: '16px',
+                fill: '#ffffff',
+                fontFamily: 'Arial'
+            }).setOrigin(0.5);
+
+            button.setInteractive();
+            button.on('pointerdown', () => {
+                this.selectTopic(index, topic);
+            });
+            
+            this.responseButtons.push(button);
+        });
+        
+        this.selectedResponse = 0;
+        this.awaitingInput = true;
+        this.updateResponseSelection();
+    }
+    
+    selectTopic(topicIndex, topicName) {
+        console.log('[TOPIC DEBUG] Selected topic:', topicName, 'for speaker:', this.currentSpeaker);
+        
+        this.awaitingInput = false;
+        
+        // Clear topic buttons
+        this.responseButtons.forEach(button => button.destroy());
+        this.responseButtons = [];
+        
+        // Get available snippets for current speaker and topic
+        const availableSnippets = conversationSystem.getAvailableSnippetsByTopic(this.currentSpeaker, topicName);
+        console.log('[SNIPPET DEBUG] Available snippets for topic', topicName, ':', availableSnippets.length);
+        
+        let snippet;
         if (availableSnippets.length === 0) {
-            console.log('[SNIPPET DEBUG] No available snippets, switching speaker or ending session');
-            this.switchSpeakerOrEnd();
+            // Get "no more snippets" snippet
+            snippet = conversationSystem.getNoMoreSnippetsSnippet(this.currentSpeaker, topicName);
+        } else {
+            // Select random snippet from available ones
+            snippet = availableSnippets[Math.floor(Math.random() * availableSnippets.length)];
+        }
+        
+        if (!snippet) {
+            console.log('[SNIPPET DEBUG] No snippet available, showing interaction options');
+            this.createInteractionOptions();
             return;
         }
         
-        // Select a random snippet (in real implementation, this could be more sophisticated)
-        const snippet = availableSnippets[Math.floor(Math.random() * availableSnippets.length)];
         console.log('[SNIPPET DEBUG] Selected snippet:', snippet.id, snippet.text);
         
         // Add to session notes
@@ -1330,7 +1492,7 @@ class TherapySessionScene extends Phaser.Scene {
 
         switch(optionIndex) {
             case 0: // Gather More Information
-                this.switchSpeakerOrEnd();
+                this.gatherMoreInformation();
                 break;
             case 1: // Review Notes
                 this.openNotesInterface();
@@ -1339,6 +1501,25 @@ class TherapySessionScene extends Phaser.Scene {
                 this.openInsightInterface();
                 break;
         }
+    }
+    
+    gatherMoreInformation() {
+        if (this.interactionCount >= this.maxInteractions) {
+            console.log('[SESSION DEBUG] Session complete, transitioning to review');
+            this.time.delayedCall(1000, () => {
+                safeSceneTransition(this, 'SessionReviewScene');
+            });
+            return;
+        }
+        
+        // Switch to other speaker
+        this.currentSpeaker = this.currentSpeaker === 'zara' ? 'finn' : 'zara';
+        console.log('[SESSION DEBUG] Switched speaker to:', this.currentSpeaker);
+        
+        // Show topic selection for new speaker
+        this.time.delayedCall(500, () => {
+            this.showTopicSelection();
+        });
     }
     
     switchSpeakerOrEnd() {
@@ -1361,11 +1542,62 @@ class TherapySessionScene extends Phaser.Scene {
     }
     
     openNotesInterface() {
-        console.log('[NOTES DEBUG] Opening notes interface (placeholder)');
-        // For now, just continue with next snippet
-        this.time.delayedCall(1000, () => {
-            this.createInteractionOptions();
+        console.log('[NOTES DEBUG] Opening notes interface');
+        
+        // Create notes overlay
+        this.notesOverlay = this.add.rectangle(400, 300, 750, 500, 0x2c3e50, 0.95);
+        this.notesOverlay.setStroke(0xecf0f1, 2);
+        
+        // Notes title
+        this.notesTitle = this.add.text(400, 80, 'Session Notes', {
+            fontSize: '24px',
+            fill: '#ecf0f1',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        // Get current session snippets
+        const sessionSnippets = conversationSystem.getCurrentSessionSnippets();
+        console.log('[NOTES DEBUG] Displaying', sessionSnippets.length, 'snippets');
+        
+        // Display snippets
+        const notesContent = sessionSnippets.map((snippet, index) => {
+            const speakerName = snippet.characterId === 'zara' ? 'Zara' : 'Finn';
+            return `${index + 1}. ${speakerName}: "${snippet.text}"`;
+        }).join('\n\n');
+        
+        this.notesText = this.add.text(50, 120, notesContent || 'No snippets recorded yet.', {
+            fontSize: '14px',
+            fill: '#bdc3c7',
+            fontFamily: 'Arial',
+            wordWrap: { width: 700 }
         });
+        
+        // Close button
+        this.closeNotesButton = this.add.text(400, 520, 'Close Notes (Press any key)', {
+            fontSize: '16px',
+            fill: '#3498db',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        // Set flag to indicate notes are open
+        this.notesOpen = true;
+        this.awaitingInput = false;
+    }
+    
+    closeNotesInterface() {
+        console.log('[NOTES DEBUG] Closing notes interface');
+        
+        // Remove notes UI elements
+        if (this.notesOverlay) this.notesOverlay.destroy();
+        if (this.notesTitle) this.notesTitle.destroy();
+        if (this.notesText) this.notesText.destroy();
+        if (this.closeNotesButton) this.closeNotesButton.destroy();
+        
+        // Reset flags
+        this.notesOpen = false;
+        
+        // Return to interaction options
+        this.createInteractionOptions();
     }
     
     openInsightInterface() {
@@ -1671,6 +1903,34 @@ class TherapySessionScene extends Phaser.Scene {
     }
     
     update() {
+        // Handle notes interface input
+        if (this.notesOpen) {
+            // Any key closes notes
+            if (this.cursors.up.justDown || this.cursors.down.justDown || 
+                this.cursors.left.justDown || this.cursors.right.justDown ||
+                this.enterKey.justDown || this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).justDown ||
+                this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE).justDown) {
+                this.closeNotesInterface();
+                return;
+            }
+            
+            // Controller input to close notes
+            if (this.input.gamepad.total) {
+                const gamepad = this.input.gamepad.getPad(0);
+                if (gamepad) {
+                    const anyButtonPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
+                                           globalInput.wasButtonJustPressed(gamepad, 1) ||
+                                           globalInput.wasNamedButtonJustPressed(gamepad, 'A') ||
+                                           globalInput.wasNamedButtonJustPressed(gamepad, 'B');
+                    if (anyButtonPressed) {
+                        this.closeNotesInterface();
+                        return;
+                    }
+                }
+            }
+            return; // Don't process other input when notes are open
+        }
+        
         // Check for A button press during typewriter animation to skip
         if (this.typewriterActive) {
             // Controller input for skipping typewriter
