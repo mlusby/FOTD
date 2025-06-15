@@ -35,6 +35,279 @@ window.addEventListener('unhandledrejection', (event) => {
     });
 });
 
+// Snippet-Based Conversation System Data Management
+class ConversationSystem {
+    constructor() {
+        this.characters = new Map();
+        this.relationships = new Map();
+        this.snippets = new Map();
+        this.playerCategorizations = new Map();
+        this.sessionNotes = new Map();
+        this.playerData = {
+            insightfulnessScore: 0,
+            currentSessionId: null
+        };
+        
+        this.initializeGameData();
+    }
+    
+    initializeGameData() {
+        // Initialize Zara
+        this.characters.set('zara', {
+            id: 'zara',
+            name: 'Zara',
+            currentTier: 1,
+            individualAttributes: {
+                differentiation: 25,
+                enmeshment: 40,
+                anxietyManagement: 30,
+                projection: 35,
+                validationSeeking: 45,
+                triangulation: 20,
+                boundaryClarity: 15
+            },
+            tierThresholds: {
+                tier2: { differentiation: 40, boundaryClarity: 30 },
+                tier3: { differentiation: 60, anxietyManagement: 50, boundaryClarity: 45 }
+            },
+            doctorPatientRelationship: {
+                trust: 50
+            }
+        });
+        
+        // Initialize Finn
+        this.characters.set('finn', {
+            id: 'finn',
+            name: 'Finn',
+            currentTier: 1,
+            individualAttributes: {
+                differentiation: 30,
+                enmeshment: 35,
+                anxietyManagement: 40,
+                projection: 30,
+                validationSeeking: 25,
+                triangulation: 15,
+                boundaryClarity: 20
+            },
+            tierThresholds: {
+                tier2: { differentiation: 45, anxietyManagement: 55 },
+                tier3: { differentiation: 65, anxietyManagement: 70, boundaryClarity: 40 }
+            },
+            doctorPatientRelationship: {
+                trust: 45
+            }
+        });
+        
+        // Initialize relationship
+        this.relationships.set('zara_finn', {
+            partners: ['zara', 'finn'],
+            attributes: {
+                trust: 35,
+                alliance: 25,
+                insightAgreement: 20
+            }
+        });
+        
+        // Initialize sample snippets
+        this.initializeSampleSnippets();
+    }
+    
+    initializeSampleSnippets() {
+        // Zara snippets
+        this.snippets.set('zara_001', {
+            id: 'zara_001',
+            characterId: 'zara',
+            text: 'When I transform, I feel like I lose myself completely.',
+            characterTierRequirement: 1,
+            relationshipRequirements: {
+                trust: 10
+            },
+            categories: [
+                { category: 'Differentiation', polarity: 'negative', score: 3 },
+                { category: 'Anxiety Management', polarity: 'negative', score: 2 }
+            ]
+        });
+        
+        this.snippets.set('zara_002', {
+            id: 'zara_002',
+            characterId: 'zara',
+            text: 'Finn always tries to help, but sometimes I need space to figure things out.',
+            characterTierRequirement: 1,
+            relationshipRequirements: {
+                trust: 15
+            },
+            categories: [
+                { category: 'Boundary Clarity', polarity: 'positive', score: 2 },
+                { category: 'Validation Seeking', polarity: 'negative', score: 1 }
+            ]
+        });
+        
+        // Finn snippets
+        this.snippets.set('finn_001', {
+            id: 'finn_001',
+            characterId: 'finn',
+            text: 'I just want to make sure she\'s safe when she transforms.',
+            characterTierRequirement: 1,
+            relationshipRequirements: {
+                trust: 10
+            },
+            categories: [
+                { category: 'Anxiety Management', polarity: 'negative', score: 2 },
+                { category: 'Boundary Clarity', polarity: 'negative', score: 1 }
+            ]
+        });
+        
+        this.snippets.set('finn_002', {
+            id: 'finn_002',
+            characterId: 'finn',
+            text: 'Maybe I do hover too much, but dragons are powerful creatures.',
+            characterTierRequirement: 1,
+            relationshipRequirements: {
+                trust: 20
+            },
+            categories: [
+                { category: 'Differentiation', polarity: 'negative', score: 1 },
+                { category: 'Projection', polarity: 'positive', score: 2 }
+            ]
+        });
+    }
+    
+    // Get available snippets for a character based on current state
+    getAvailableSnippets(characterId) {
+        const character = this.characters.get(characterId);
+        const relationship = this.relationships.get('zara_finn');
+        
+        if (!character || !relationship) return [];
+        
+        return Array.from(this.snippets.values())
+            .filter(snippet => {
+                if (snippet.characterId !== characterId) return false;
+                if (snippet.characterTierRequirement > character.currentTier) return false;
+                
+                // Check relationship requirements
+                for (const [attr, required] of Object.entries(snippet.relationshipRequirements || {})) {
+                    if (relationship.attributes[attr] < required) return false;
+                }
+                
+                return true;
+            });
+    }
+    
+    // Add snippet to current session notes
+    addSnippetToSession(snippetId) {
+        if (!this.playerData.currentSessionId) {
+            this.playerData.currentSessionId = `session_${Date.now()}`;
+            this.sessionNotes.set(this.playerData.currentSessionId, { snippets: [] });
+        }
+        
+        const snippet = this.snippets.get(snippetId);
+        if (snippet) {
+            const sessionData = this.sessionNotes.get(this.playerData.currentSessionId);
+            sessionData.snippets.push({
+                id: snippetId,
+                characterId: snippet.characterId,
+                text: snippet.text,
+                timestamp: new Date().toISOString(),
+                playerCategorization: null
+            });
+        }
+    }
+    
+    // Categorize a snippet
+    categorizeSnippet(snippetId, category, polarity) {
+        let categorization = this.playerCategorizations.get(snippetId);
+        if (!categorization) {
+            categorization = { snippetId, categories: [] };
+            this.playerCategorizations.set(snippetId, categorization);
+        }
+        
+        // Check if this category already exists
+        const existingIndex = categorization.categories.findIndex(c => c.category === category);
+        if (existingIndex >= 0) {
+            // Update existing
+            categorization.categories[existingIndex].polarity = polarity;
+        } else {
+            // Add new
+            categorization.categories.push({
+                category,
+                polarity,
+                proposed: false,
+                successful: null
+            });
+        }
+    }
+    
+    // Propose insight using categorized snippet
+    proposeInsight(snippetId, category, polarity) {
+        const snippet = this.snippets.get(snippetId);
+        const categorization = this.playerCategorizations.get(snippetId);
+        
+        if (!snippet || !categorization) return { success: false, reason: 'Missing data' };
+        
+        const playerCategory = categorization.categories.find(c => c.category === category);
+        if (!playerCategory) return { success: false, reason: 'Category not assigned' };
+        
+        // Check if already successfully proposed
+        if (playerCategory.successful === true) {
+            return { success: false, reason: 'Already successfully used' };
+        }
+        
+        // Mark as proposed
+        playerCategory.proposed = true;
+        
+        // Check if correct
+        const correctCategory = snippet.categories.find(c => c.category === category && c.polarity === polarity);
+        if (correctCategory) {
+            playerCategory.successful = true;
+            this.applyAttributeChange(snippet.characterId, category, correctCategory.score);
+            return { success: true, score: correctCategory.score };
+        } else {
+            playerCategory.successful = false;
+            return { success: false, reason: 'Incorrect categorization' };
+        }
+    }
+    
+    // Apply attribute changes and check for tier progression
+    applyAttributeChange(characterId, attribute, score) {
+        const character = this.characters.get(characterId);
+        if (!character) return;
+        
+        // Convert category name to attribute name (lowercase)
+        const attributeName = attribute.toLowerCase().replace(/\s+/g, '');
+        
+        if (character.individualAttributes.hasOwnProperty(attributeName)) {
+            character.individualAttributes[attributeName] += score;
+            console.log(`[ATTRIBUTE] ${character.name} ${attributeName} increased by ${score} to ${character.individualAttributes[attributeName]}`);
+            
+            // Check for tier progression
+            this.checkTierProgression(characterId);
+        }
+    }
+    
+    // Check if character should advance to next tier
+    checkTierProgression(characterId) {
+        const character = this.characters.get(characterId);
+        if (!character) return;
+        
+        const nextTier = character.currentTier + 1;
+        const thresholds = character.tierThresholds[`tier${nextTier}`];
+        
+        if (thresholds) {
+            const meetsRequirements = Object.entries(thresholds).every(([attr, required]) => {
+                return character.individualAttributes[attr] >= required;
+            });
+            
+            if (meetsRequirements && character.currentTier < nextTier) {
+                character.currentTier = nextTier;
+                console.log(`[TIER PROGRESSION] ${character.name} advanced to tier ${nextTier}`);
+            }
+        }
+    }
+}
+
+// Global conversation system instance
+const conversationSystem = new ConversationSystem();
+
 // Scene transition helper with debugging and Phaser-specific fixes
 function safeSceneTransition(scene, targetSceneName, method = 'start') {
     try {
