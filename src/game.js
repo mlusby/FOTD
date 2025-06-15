@@ -38,13 +38,6 @@ window.addEventListener('unhandledrejection', (event) => {
 // Scene transition helper with debugging and Phaser-specific fixes
 function safeSceneTransition(scene, targetSceneName, method = 'start') {
     try {
-        console.log(`[SCENE DEBUG] Attempting ${method} from ${scene.scene.key} to ${targetSceneName}`);
-        console.log(`[SCENE DEBUG] Current scene state:`, {
-            key: scene.scene.key,
-            isActive: scene.scene.isActive(),
-            isPaused: scene.scene.isPaused(),
-            isSleeping: scene.scene.isSleeping()
-        });
         
         // Validate scene manager state
         if (!scene.scene || !scene.scene.manager) {
@@ -77,19 +70,7 @@ function safeSceneTransition(scene, targetSceneName, method = 'start') {
         
         // Execute scene transition immediately to avoid timer conflicts
         try {
-            console.log(`[SCENE DEBUG] About to call scene.start(${targetSceneName})`);
-            console.log(`[SCENE DEBUG] Scene manager:`, scene.scene.manager);
-            console.log(`[SCENE DEBUG] Available scenes:`, Object.keys(scene.scene.manager.scenes));
-            
-            // Check if target scene exists
-            const targetScene = scene.scene.manager.getScene(targetSceneName);
-            console.log(`[SCENE DEBUG] Target scene found:`, targetScene ? true : false);
-            
-            // Call scene.start with detailed error handling
-            console.log(`[SCENE DEBUG] Current scene before start:`, scene.scene.key);
             scene.scene.start(targetSceneName);
-            console.log(`[SCENE DEBUG] scene.start() call completed`);
-            
         } catch (immediateError) {
             console.error(`[SCENE DEBUG] Error during scene.start():`, {
                 from: scene.scene.key,
@@ -190,8 +171,8 @@ class InputManager {
         }
     }
     
-    // Improved thumbstick detection with deadzone and state tracking
-    wasThumbstickJustMoved(gamepad, stickName, direction, threshold = 0.7) {
+    // Improved thumbstick detection with lower threshold and better responsiveness
+    wasThumbstickJustMoved(gamepad, stickName, direction, threshold = 0.3) {
         if (!gamepad || !gamepad[stickName]) {
             return false;
         }
@@ -216,10 +197,37 @@ class InputManager {
         return currentMoved && !previousMoved;
     }
     
+    // Additional method for immediate thumbstick response (bypasses "just moved" requirement)
+    isThumbstickActive(gamepad, stickName, direction, threshold = 0.3) {
+        if (!gamepad || !gamepad[stickName]) {
+            return false;
+        }
+        
+        const stick = gamepad[stickName];
+        const now = Date.now();
+        
+        // Check if enough time has passed since last input to allow new input
+        if (now - this.lastInputTime < this.inputDelay) {
+            return false;
+        }
+        
+        if (direction === 'up') {
+            return stick.y < -threshold;
+        } else if (direction === 'down') {
+            return stick.y > threshold;
+        } else if (direction === 'left') {
+            return stick.x < -threshold;
+        } else if (direction === 'right') {
+            return stick.x > threshold;
+        }
+        
+        return false;
+    }
+    
     // Clear input states to prevent issues between scenes
     clearInputStates() {
         this.buttonStates = {};
-        this.lastInputTime = 0;
+        this.lastInputTime = Date.now() + 300; // Add 300ms delay after scene transitions
     }
 }
 
@@ -231,31 +239,20 @@ class MainMenuScene extends Phaser.Scene {
         this.selectedOption = 0;
         this.menuOptions = ['Start Game', 'Dummy Option 1', 'Dummy Option 2'];
         this.menuButtons = [];
+        this.pipeIndicator = null;
     }
 
     preload() {
+        this.load.image('fotd-background', 'assets/images/FOTDbackground.png');
+        this.load.image('pipe-icon', 'assets/images/pipeicon.png');
         console.log('MainMenuScene preload complete');
     }
 
     create() {
         console.log('MainMenuScene create started');
         
-        // Add background
-        this.add.rectangle(400, 300, 800, 600, 0x2c3e50);
-        
-        // Title
-        this.add.text(400, 150, 'Freud of the Dark', {
-            fontSize: '48px',
-            fill: '#ecf0f1',
-            fontFamily: 'Arial'
-        }).setOrigin(0.5);
-
-        // Subtitle
-        this.add.text(400, 210, 'Therapy for the Fantastical', {
-            fontSize: '24px',
-            fill: '#bdc3c7',
-            fontFamily: 'Arial'
-        }).setOrigin(0.5);
+        // Add background image
+        this.add.image(400, 300, 'fotd-background').setDisplaySize(800, 600);
 
         // Clear any existing menu buttons to prevent corruption
         this.menuButtons = [];
@@ -279,6 +276,9 @@ class MainMenuScene extends Phaser.Scene {
                 console.error(`[TEXT DEBUG] Error creating menu button ${index}:`, error);
             }
         });
+
+        // Create pipe indicator (simple graphics version of Freud's pipe)
+        this.createPipeIndicator();
 
         // Reset selection to ensure it's properly initialized
         this.selectedOption = 0;
@@ -324,6 +324,17 @@ class MainMenuScene extends Phaser.Scene {
         this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     }
 
+    createPipeIndicator() {
+        // Create pipe indicator using the image
+        this.pipeIndicator = this.add.image(0, 0, 'pipe-icon');
+        this.pipeIndicator.setDepth(100); // Ensure it appears above other elements
+        // Scale to match text height - MainMenu uses 32px font, so scale accordingly
+        this.pipeIndicator.setScale(0.08); // Much smaller to match text height
+        
+        // Initially hide the pipe
+        this.pipeIndicator.setVisible(false);
+    }
+
     updateSelection() {
         try {
             // Only skip if scene is explicitly destroyed, not just inactive
@@ -357,14 +368,17 @@ class MainMenuScene extends Phaser.Scene {
                 return; // Exit early, let the delayed updateSelection handle highlighting
             }
             
-            // Normal highlighting if buttons are healthy
-            this.menuButtons.forEach((button, index) => {
-                if (button && button.setColor) {
-                    const newColor = index === this.selectedOption ? '#3498db' : '#95a5a6';
-                    console.log(`[SELECTION DEBUG] MainMenu setting button ${index} to color ${newColor}`);
-                    button.setColor(newColor);
-                }
-            });
+            // Position pipe indicator next to selected option
+            if (this.pipeIndicator && this.menuButtons[this.selectedOption]) {
+                const selectedButton = this.menuButtons[this.selectedOption];
+                this.pipeIndicator.setVisible(true);
+                // Calculate left edge of text and position pipe 30 pixels before it
+                const textLeftEdge = selectedButton.x - (selectedButton.width / 2);
+                this.pipeIndicator.setPosition(
+                    textLeftEdge - 30, // Fixed 30px gap from text start
+                    selectedButton.y
+                );
+            }
         } catch (error) {
             console.error('[TEXT DEBUG] Error in MainMenuScene updateSelection:', error.message);
             // Try to rebuild on any error
@@ -396,6 +410,12 @@ class MainMenuScene extends Phaser.Scene {
             button.on('pointerdown', () => this.selectOption(index));
             this.menuButtons.push(button);
         });
+        
+        // Recreate pipe indicator after rebuild
+        if (this.pipeIndicator) {
+            this.pipeIndicator.destroy();
+        }
+        this.createPipeIndicator();
         
         // Highlight after rebuild
         this.time.delayedCall(10, () => {
@@ -439,22 +459,30 @@ class MainMenuScene extends Phaser.Scene {
         if (this.input.gamepad.total) {
             const gamepad = this.input.gamepad.getPad(0);
             if (gamepad) {
-                // Check D-pad up (with justPressed logic)
+                // Check D-pad up (with improved thumbstick responsiveness)
                 if (globalInput.wasButtonJustPressed(gamepad, 12) || // D-pad up
                     globalInput.wasNamedButtonJustPressed(gamepad, 'up') ||
-                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up')) {
-                    console.log('[NAVIGATION DEBUG] MainMenu navigating up, from', this.selectedOption, 'to', Math.max(0, this.selectedOption - 1));
-                    this.selectedOption = Math.max(0, this.selectedOption - 1);
-                    this.updateSelection();
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up') ||
+                    globalInput.isThumbstickActive(gamepad, 'leftStick', 'up')) {
+                    if (globalInput.canAcceptInput()) {
+                        globalInput.lastInputTime = Date.now();
+                        console.log('[NAVIGATION DEBUG] MainMenu navigating up, from', this.selectedOption, 'to', Math.max(0, this.selectedOption - 1));
+                        this.selectedOption = Math.max(0, this.selectedOption - 1);
+                        this.updateSelection();
+                    }
                 }
                 
-                // Check D-pad down (with justPressed logic)
+                // Check D-pad down (with improved thumbstick responsiveness)
                 if (globalInput.wasButtonJustPressed(gamepad, 13) || // D-pad down
                     globalInput.wasNamedButtonJustPressed(gamepad, 'down') ||
-                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down')) {
-                    console.log('[NAVIGATION DEBUG] MainMenu navigating down, from', this.selectedOption, 'to', Math.min(this.menuOptions.length - 1, this.selectedOption + 1));
-                    this.selectedOption = Math.min(this.menuOptions.length - 1, this.selectedOption + 1);
-                    this.updateSelection();
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down') ||
+                    globalInput.isThumbstickActive(gamepad, 'leftStick', 'down')) {
+                    if (globalInput.canAcceptInput()) {
+                        globalInput.lastInputTime = Date.now();
+                        console.log('[NAVIGATION DEBUG] MainMenu navigating down, from', this.selectedOption, 'to', Math.min(this.menuOptions.length - 1, this.selectedOption + 1));
+                        this.selectedOption = Math.min(this.menuOptions.length - 1, this.selectedOption + 1);
+                        this.updateSelection();
+                    }
                 }
                 
                 // Check A button with reliable detection
@@ -475,6 +503,11 @@ class TherapyOfficeScene extends Phaser.Scene {
         this.selectedOption = 0;
         this.menuOptions = ['Patient Files', 'Begin Session'];
         this.menuButtons = [];
+        this.pipeIndicator = null;
+    }
+
+    preload() {
+        this.load.image('pipe-icon', 'assets/images/pipeicon.png');
     }
 
     create() {
@@ -519,6 +552,9 @@ class TherapyOfficeScene extends Phaser.Scene {
         sessionButton.on('pointerdown', () => this.selectOption(1));
         this.menuButtons.push(sessionButton);
 
+        // Create pipe indicator
+        this.createPipeIndicator();
+
         // Reset selection to ensure it's properly initialized
         this.selectedOption = 0;
         
@@ -538,6 +574,17 @@ class TherapyOfficeScene extends Phaser.Scene {
         this.cursors = this.input.keyboard.createCursorKeys();
         this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
         this.escKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    }
+
+    createPipeIndicator() {
+        // Create pipe indicator using the image
+        this.pipeIndicator = this.add.image(0, 0, 'pipe-icon');
+        this.pipeIndicator.setDepth(100); // Ensure it appears above other elements
+        // Scale to match text height - TherapyOffice uses 24px font, so scale accordingly
+        this.pipeIndicator.setScale(0.06); // Smaller to match 24px text height
+        
+        // Initially hide the pipe
+        this.pipeIndicator.setVisible(false);
     }
 
     updateSelection() {
@@ -573,14 +620,17 @@ class TherapyOfficeScene extends Phaser.Scene {
                 return; // Exit early, let the delayed updateSelection handle highlighting
             }
             
-            // Normal highlighting if buttons are healthy
-            this.menuButtons.forEach((button, index) => {
-                if (button && button.setColor) {
-                    const newColor = index === this.selectedOption ? '#3498db' : '#95a5a6';
-                    console.log(`[SELECTION DEBUG] TherapyOffice setting button ${index} to color ${newColor}`);
-                    button.setColor(newColor);
-                }
-            });
+            // Position pipe indicator at fixed distance from text start
+            if (this.pipeIndicator && this.menuButtons[this.selectedOption]) {
+                const selectedButton = this.menuButtons[this.selectedOption];
+                this.pipeIndicator.setVisible(true);
+                // Calculate left edge of text and position pipe 30 pixels before it
+                const textLeftEdge = selectedButton.x - (selectedButton.width / 2);
+                this.pipeIndicator.setPosition(
+                    textLeftEdge - 30, // Fixed 30px gap from text start
+                    selectedButton.y
+                );
+            }
         } catch (error) {
             console.error('[TEXT DEBUG] Error in TherapyOfficeScene updateSelection:', error.message);
             // Try to rebuild on any error
@@ -619,6 +669,12 @@ class TherapyOfficeScene extends Phaser.Scene {
         sessionButton.setInteractive();
         sessionButton.on('pointerdown', () => this.selectOption(1));
         this.menuButtons.push(sessionButton);
+        
+        // Recreate pipe indicator after rebuild
+        if (this.pipeIndicator) {
+            this.pipeIndicator.destroy();
+        }
+        this.createPipeIndicator();
         
         // Highlight after rebuild
         this.time.delayedCall(10, () => {
@@ -672,28 +728,38 @@ class TherapyOfficeScene extends Phaser.Scene {
         if (this.input.gamepad.total) {
             const gamepad = this.input.gamepad.getPad(0);
             if (gamepad) {
-                // Navigation - left/up
+                // Navigation - left/up (with improved thumbstick responsiveness)
                 if (globalInput.wasButtonJustPressed(gamepad, 14) || // D-pad left
                     globalInput.wasButtonJustPressed(gamepad, 12) || // D-pad up
                     globalInput.wasNamedButtonJustPressed(gamepad, 'left') ||
                     globalInput.wasNamedButtonJustPressed(gamepad, 'up') ||
                     globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'left') ||
-                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up')) {
-                    console.log('[NAVIGATION DEBUG] TherapyOffice navigating left/up, from', this.selectedOption, 'to', Math.max(0, this.selectedOption - 1));
-                    this.selectedOption = Math.max(0, this.selectedOption - 1);
-                    this.updateSelection();
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up') ||
+                    globalInput.isThumbstickActive(gamepad, 'leftStick', 'left') ||
+                    globalInput.isThumbstickActive(gamepad, 'leftStick', 'up')) {
+                    if (globalInput.canAcceptInput()) {
+                        globalInput.lastInputTime = Date.now();
+                        console.log('[NAVIGATION DEBUG] TherapyOffice navigating left/up, from', this.selectedOption, 'to', Math.max(0, this.selectedOption - 1));
+                        this.selectedOption = Math.max(0, this.selectedOption - 1);
+                        this.updateSelection();
+                    }
                 }
                 
-                // Navigation - right/down
+                // Navigation - right/down (with improved thumbstick responsiveness)
                 if (globalInput.wasButtonJustPressed(gamepad, 15) || // D-pad right
                     globalInput.wasButtonJustPressed(gamepad, 13) || // D-pad down
                     globalInput.wasNamedButtonJustPressed(gamepad, 'right') ||
                     globalInput.wasNamedButtonJustPressed(gamepad, 'down') ||
                     globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'right') ||
-                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down')) {
-                    console.log('[NAVIGATION DEBUG] TherapyOffice navigating right/down, from', this.selectedOption, 'to', Math.min(this.menuOptions.length - 1, this.selectedOption + 1));
-                    this.selectedOption = Math.min(this.menuOptions.length - 1, this.selectedOption + 1);
-                    this.updateSelection();
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down') ||
+                    globalInput.isThumbstickActive(gamepad, 'leftStick', 'right') ||
+                    globalInput.isThumbstickActive(gamepad, 'leftStick', 'down')) {
+                    if (globalInput.canAcceptInput()) {
+                        globalInput.lastInputTime = Date.now();
+                        console.log('[NAVIGATION DEBUG] TherapyOffice navigating right/down, from', this.selectedOption, 'to', Math.min(this.menuOptions.length - 1, this.selectedOption + 1));
+                        this.selectedOption = Math.min(this.menuOptions.length - 1, this.selectedOption + 1);
+                        this.updateSelection();
+                    }
                 }
                 
                 // A button with reliable detection
@@ -830,10 +896,6 @@ class TherapySessionScene extends Phaser.Scene {
 
     create() {
         try {
-            console.log('[THERAPY SESSION] TherapySessionScene.create() called!');
-            console.log('[THERAPY SESSION] Scene key:', this.scene.key);
-            console.log('[THERAPY SESSION] This scene is active:', this.scene.isActive());
-            
             // Session room background
             this.add.rectangle(400, 300, 800, 600, 0x2c3e50);
         
@@ -878,23 +940,12 @@ class TherapySessionScene extends Phaser.Scene {
         // Start initial dialogue with typewriter effect
         const initialText = 'Zara: "He never understands my need for personal space when I transform..."';
         this.startTypewriterEffect(initialText, () => {
-            console.log('[TYPEWRITER DEBUG] Initial dialogue completed, creating response options');
             this.createSimpleResponseOptions();
         });
         
         // Set up keyboard controls
         this.cursors = this.input.keyboard.createCursorKeys();
         this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
-        
-        console.log('[THERAPY SESSION] TherapySessionScene.create() completed successfully!');
-        
-        // Check scene status after a brief delay
-        this.time.delayedCall(200, () => {
-            console.log('[THERAPY SESSION] Status check after 200ms:');
-            console.log('[THERAPY SESSION] Scene active:', this.scene.isActive());
-            console.log('[THERAPY SESSION] Scene visible:', this.scene.isVisible());
-            console.log('[THERAPY SESSION] This scene key:', this.scene.key);
-        });
         
         } catch (createError) {
             console.error('[THERAPY SESSION] Error in TherapySessionScene.create():', {
@@ -909,8 +960,6 @@ class TherapySessionScene extends Phaser.Scene {
     }
 
     createSimpleResponseOptions() {
-        console.log('[SIMPLE RESPONSE] Creating simple response options');
-        
         // Clear previous response buttons
         this.responseButtons.forEach(button => button.destroy());
         this.responseButtons = [];
@@ -923,7 +972,6 @@ class TherapySessionScene extends Phaser.Scene {
 
         responses.forEach((response, index) => {
             const yPos = 380 + (index * 30);
-            console.log('[SIMPLE RESPONSE] Creating button', index, 'at Y:', yPos);
             
             // Create simple text without complex styling
             const button = this.add.text(400, yPos, response, {
@@ -934,7 +982,6 @@ class TherapySessionScene extends Phaser.Scene {
 
             button.setInteractive();
             button.on('pointerdown', () => {
-                console.log('[SIMPLE RESPONSE] Button', index, 'clicked');
                 this.handleResponse(index);
             });
             
@@ -943,7 +990,6 @@ class TherapySessionScene extends Phaser.Scene {
         
         this.selectedResponse = 0;
         this.awaitingInput = true;
-        console.log('[SIMPLE RESPONSE] Simple response options created successfully');
         this.updateResponseSelection();
     }
 
@@ -1009,26 +1055,6 @@ class TherapySessionScene extends Phaser.Scene {
         
         this.selectedResponse = 0;
         this.awaitingInput = true;
-        console.log('[RESPONSE DEBUG] Set awaitingInput to true, total buttons created:', this.responseButtons.length);
-        
-        // Add bright red test rectangles at the same positions to verify rendering
-        console.log('[RESPONSE DEBUG] Adding test rectangles for visibility debugging');
-        for (let i = 0; i < 3; i++) {
-            const testRect = this.add.rectangle(400, 380 + (i * 25), 200, 20, 0xff0000);
-            testRect.setDepth(999);
-            console.log('[RESPONSE DEBUG] Added test rectangle', i, 'at Y:', 380 + (i * 25));
-        }
-        
-        // Debug the scene's display list
-        console.log('[RESPONSE DEBUG] Scene children count:', this.children.list.length);
-        console.log('[RESPONSE DEBUG] Last 8 children in scene:', this.children.list.slice(-8).map(child => ({
-            type: child.type,
-            x: child.x,
-            y: child.y,
-            visible: child.visible,
-            text: child.text || 'no text'
-        })));
-        
         this.updateResponseSelection();
     }
     
@@ -1143,20 +1169,15 @@ class TherapySessionScene extends Phaser.Scene {
         const fullText = responses[responseIndex];
         this.startTypewriterEffect(fullText, () => {
             // Callback when typewriter is complete
-            console.log('[TYPEWRITER DEBUG] Typewriter effect completed');
             this.typewriterActive = false;
             
             if (this.interactionCount >= this.maxInteractions) {
-                console.log('[TYPEWRITER DEBUG] Max interactions reached, transitioning to review scene');
                 this.time.delayedCall(1000, () => {
-                    console.log('[SCENE DEBUG] TherapySessionScene completing session, transitioning to review');
                     safeSceneTransition(this, 'SessionReviewScene');
                 });
             } else {
                 // Show new response options after a brief pause
-                console.log('[TYPEWRITER DEBUG] Creating new response options after delay');
                 this.time.delayedCall(800, () => {
-                    console.log('[TYPEWRITER DEBUG] Delay complete, calling createResponseOptions');
                     this.createResponseOptions();
                 });
             }
@@ -1164,9 +1185,6 @@ class TherapySessionScene extends Phaser.Scene {
     }
     
     startTypewriterEffect(fullText, onComplete) {
-        console.log('[TYPEWRITER DEBUG] startTypewriterEffect called with text length:', fullText.length);
-        console.log('[TYPEWRITER DEBUG] onComplete callback provided:', !!onComplete);
-        
         // Clear any existing typewriter timer
         if (this.typewriterTimer) {
             this.typewriterTimer.destroy();
@@ -1174,7 +1192,6 @@ class TherapySessionScene extends Phaser.Scene {
         
         // Start with empty text
         this.dialogueText.setText('');
-        console.log('[TYPEWRITER DEBUG] Cleared text, starting typewriter');
         
         let currentIndex = 0;
         const typeSpeed = 30; // milliseconds per character
@@ -1182,7 +1199,6 @@ class TherapySessionScene extends Phaser.Scene {
         this.typewriterTimer = this.time.addEvent({
             delay: typeSpeed,
             callback: () => {
-                console.log('[TYPEWRITER DEBUG] Timer callback, currentIndex:', currentIndex, 'of', fullText.length);
                 if (currentIndex < fullText.length) {
                     // Add next character
                     const displayText = fullText.substring(0, currentIndex + 1);
@@ -1190,21 +1206,15 @@ class TherapySessionScene extends Phaser.Scene {
                     currentIndex++;
                 } else {
                     // Typewriter complete
-                    console.log('[TYPEWRITER DEBUG] Typewriter timer completed, calling onComplete callback');
                     this.typewriterTimer.destroy();
                     this.typewriterTimer = null;
                     if (onComplete) {
-                        console.log('[TYPEWRITER DEBUG] Executing onComplete callback');
                         onComplete();
-                    } else {
-                        console.log('[TYPEWRITER DEBUG] No onComplete callback provided');
                     }
                 }
             },
             repeat: fullText.length // Need one extra callback to trigger completion
         });
-        
-        console.log('[TYPEWRITER DEBUG] Timer created with', fullText.length, 'repeats');
     }
     
     update() {
