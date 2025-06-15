@@ -212,8 +212,11 @@ const ZARA_FINN_SNIPPETS = {
 };
 
 // Export for use in game
+console.log('[SNIPPETS-DATA] Snippet data file loaded, topics:', Object.keys(ZARA_FINN_SNIPPETS));
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { ZARA_FINN_SNIPPETS };
 } else {
     window.ZARA_FINN_SNIPPETS = ZARA_FINN_SNIPPETS;
+    console.log('[SNIPPETS-DATA] Added ZARA_FINN_SNIPPETS to window object');
 }

@@ -116,6 +116,16 @@ class ConversationSystem {
         // Load snippets from external data file
         const snippetData = window.ZARA_FINN_SNIPPETS;
         
+        if (!snippetData) {
+            console.error('[SNIPPETS] ZARA_FINN_SNIPPETS not found on window object!');
+            console.log('[SNIPPETS] Available on window:', Object.keys(window).filter(k => k.includes('ZARA')));
+            console.log('[SNIPPETS] Falling back to inline snippets for testing');
+            this.initializeFallbackSnippets();
+            return;
+        }
+        
+        console.log('[SNIPPETS] Loading snippets from external data:', Object.keys(snippetData));
+        
         Object.entries(snippetData).forEach(([topicKey, topicData]) => {
             // Convert topic key to display name
             const topicName = topicKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -175,6 +185,63 @@ class ConversationSystem {
         });
         
         console.log('[SNIPPETS] Loaded', this.snippets.size, 'total snippets from external data');
+    }
+    
+    // Fallback method with inline snippets for testing
+    initializeFallbackSnippets() {
+        console.log('[SNIPPETS] Using fallback inline snippets');
+        
+        // Basic test snippets
+        this.snippets.set('zara_001', {
+            id: 'zara_001',
+            characterId: 'zara',
+            text: 'When I transform, I feel like I lose myself completely.',
+            characterTierRequirement: 1,
+            topic: 'Transformation Safety',
+            relationshipRequirements: { trust: 10 },
+            categories: [
+                { category: 'Differentiation', polarity: 'negative', score: 3 },
+                { category: 'Anxiety Management', polarity: 'negative', score: 2 }
+            ]
+        });
+        
+        this.snippets.set('finn_001', {
+            id: 'finn_001',
+            characterId: 'finn',
+            text: 'I just want to make sure she\'s safe when she transforms.',
+            characterTierRequirement: 1,
+            topic: 'Transformation Safety',
+            relationshipRequirements: { trust: 10 },
+            categories: [
+                { category: 'Anxiety Management', polarity: 'negative', score: 2 },
+                { category: 'Boundary Clarity', polarity: 'negative', score: 1 }
+            ]
+        });
+        
+        // No more snippets
+        this.snippets.set('zara_no_more_transformation_safety', {
+            id: 'zara_no_more_transformation_safety',
+            characterId: 'zara',
+            text: 'I think we\'ve covered my transformation concerns for now.',
+            characterTierRequirement: 1,
+            topic: 'Transformation Safety',
+            isNoMoreSnippet: true,
+            relationshipRequirements: {},
+            categories: []
+        });
+        
+        this.snippets.set('finn_no_more_transformation_safety', {
+            id: 'finn_no_more_transformation_safety',
+            characterId: 'finn',
+            text: 'I don\'t have more to say about transformation safety right now.',
+            characterTierRequirement: 1,
+            topic: 'Transformation Safety',
+            isNoMoreSnippet: true,
+            relationshipRequirements: {},
+            categories: []
+        });
+        
+        console.log('[SNIPPETS] Loaded', this.snippets.size, 'fallback snippets');
     }
     
     // Get available topics for current relationship
