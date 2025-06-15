@@ -1,10 +1,137 @@
 // Freud of the Dark - Main Game Configuration
 
-// Global input manager to prevent conflicts
+// Enhanced error handler for better debugging with unminified Phaser
+window.addEventListener('error', (event) => {
+    console.error('Global error caught:', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error,
+        stack: event.error ? event.error.stack : 'No stack available'
+    });
+    
+    // Check for various error patterns that might be related to our issue
+    if (event.message && (
+        event.message.includes('cut') || 
+        event.message.includes('null is not an object') ||
+        event.message.includes('Cannot read prop') ||
+        event.message.includes('setSize')
+    )) {
+        console.error('FOUND A RELEVANT ERROR!', {
+            message: event.message,
+            stack: event.error ? event.error.stack : 'No stack',
+            fullEvent: event
+        });
+        debugger; // This will pause execution in dev tools
+    }
+});
+
+// Also catch unhandled promise rejections
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', {
+        reason: event.reason,
+        promise: event.promise
+    });
+});
+
+// Scene transition helper with debugging and Phaser-specific fixes
+function safeSceneTransition(scene, targetSceneName, method = 'switch') {
+    try {
+        console.log(`[SCENE DEBUG] Attempting ${method} from ${scene.scene.key} to ${targetSceneName}`);
+        console.log(`[SCENE DEBUG] Current scene state:`, {
+            key: scene.scene.key,
+            isActive: scene.scene.isActive(),
+            isPaused: scene.scene.isPaused(),
+            isSleeping: scene.scene.isSleeping()
+        });
+        
+        // Validate scene manager state
+        if (!scene.scene || !scene.scene.manager) {
+            console.error('[SCENE DEBUG] Scene or scene manager is null!');
+            return false;
+        }
+        
+        // CRITICAL FIX: Clear any pending timers/events and clean up display objects
+        if (scene.time) {
+            scene.time.removeAllEvents();
+        }
+        
+        // Fix for the setSize/cut error: Ensure all text objects are properly cleaned up
+        if (scene.children) {
+            scene.children.list.forEach(child => {
+                if (child && child.type === 'Text' && child.destroy) {
+                    try {
+                        // Force text object cleanup before scene transition
+                        if (child.style && child.style.wordWrapCallback) {
+                            child.style.wordWrapCallback = null;
+                        }
+                    } catch (e) {
+                        console.warn('[SCENE DEBUG] Text cleanup warning:', e.message);
+                    }
+                }
+            });
+        }
+        
+        // Clear input states before transition to prevent sticky inputs
+        globalInput.clearInputStates();
+        
+        // Add a small delay to allow Phaser to finish any pending operations
+        scene.time.delayedCall(50, () => {
+            try {
+                // Perform the transition
+                if (method === 'switch') {
+                    scene.scene.switch(targetSceneName);
+                } else {
+                    scene.scene.start(targetSceneName);
+                }
+                console.log(`[SCENE DEBUG] Delayed transition to ${targetSceneName} completed successfully`);
+            } catch (delayedError) {
+                console.error(`[SCENE DEBUG] Error during delayed transition:`, {
+                    from: scene.scene.key,
+                    to: targetSceneName,
+                    method: method,
+                    error: delayedError.message,
+                    stack: delayedError.stack
+                });
+                // Fallback: try direct scene.start instead
+                try {
+                    scene.scene.start(targetSceneName);
+                } catch (fallbackError) {
+                    console.error('[SCENE DEBUG] Fallback transition also failed:', fallbackError);
+                }
+            }
+        });
+        
+        return true;
+        
+    } catch (error) {
+        console.error(`[SCENE DEBUG] Error during scene transition setup:`, {
+            from: scene.scene.key,
+            to: targetSceneName,
+            method: method,
+            error: error.message,
+            stack: error.stack
+        });
+        
+        // Emergency fallback
+        try {
+            console.log('[SCENE DEBUG] Attempting emergency fallback transition');
+            scene.scene.start(targetSceneName);
+            return true;
+        } catch (fallbackError) {
+            console.error('[SCENE DEBUG] Emergency fallback failed:', fallbackError);
+            return false;
+        }
+    }
+}
+
+// Global input manager to prevent conflicts and track button states
 class InputManager {
     constructor() {
         this.lastInputTime = 0;
-        this.inputDelay = 300; // 300ms between inputs
+        this.inputDelay = 150; // Reduced to 150ms for better responsiveness
+        this.buttonStates = {};
     }
     
     canAcceptInput() {
@@ -14,6 +141,89 @@ class InputManager {
             return true;
         }
         return false;
+    }
+    
+    // Track button state changes for "justPressed" detection
+    wasButtonJustPressed(gamepad, buttonIndex) {
+        try {
+            if (!gamepad || !gamepad.buttons || !gamepad.buttons[buttonIndex]) {
+                return false;
+            }
+            
+            const buttonKey = `${gamepad.id}_${buttonIndex}`;
+            const currentPressed = gamepad.buttons[buttonIndex].pressed;
+            const previousPressed = this.buttonStates[buttonKey] || false;
+            
+            this.buttonStates[buttonKey] = currentPressed;
+            
+            // Return true only if button was just pressed (not held)
+            return currentPressed && !previousPressed;
+        } catch (error) {
+            console.error('[INPUT DEBUG] Error in wasButtonJustPressed:', {
+                buttonIndex,
+                gamepadId: gamepad ? gamepad.id : 'null',
+                error: error.message,
+                stack: error.stack
+            });
+            return false;
+        }
+    }
+    
+    // Alternative method using named button properties
+    wasNamedButtonJustPressed(gamepad, buttonName) {
+        try {
+            if (!gamepad || !gamepad[buttonName]) {
+                return false;
+            }
+            
+            const buttonKey = `${gamepad.id}_${buttonName}`;
+            const currentPressed = gamepad[buttonName].pressed;
+            const previousPressed = this.buttonStates[buttonKey] || false;
+            
+            this.buttonStates[buttonKey] = currentPressed;
+            
+            return currentPressed && !previousPressed;
+        } catch (error) {
+            console.error('[INPUT DEBUG] Error in wasNamedButtonJustPressed:', {
+                buttonName,
+                gamepadId: gamepad ? gamepad.id : 'null',
+                error: error.message,
+                stack: error.stack
+            });
+            return false;
+        }
+    }
+    
+    // Improved thumbstick detection with deadzone and state tracking
+    wasThumbstickJustMoved(gamepad, stickName, direction, threshold = 0.7) {
+        if (!gamepad || !gamepad[stickName]) {
+            return false;
+        }
+        
+        const stick = gamepad[stickName];
+        const stickKey = `${gamepad.id}_${stickName}_${direction}`;
+        
+        let currentMoved = false;
+        if (direction === 'up') {
+            currentMoved = stick.y < -threshold;
+        } else if (direction === 'down') {
+            currentMoved = stick.y > threshold;
+        } else if (direction === 'left') {
+            currentMoved = stick.x < -threshold;
+        } else if (direction === 'right') {
+            currentMoved = stick.x > threshold;
+        }
+        
+        const previousMoved = this.buttonStates[stickKey] || false;
+        this.buttonStates[stickKey] = currentMoved;
+        
+        return currentMoved && !previousMoved;
+    }
+    
+    // Clear input states to prevent issues between scenes
+    clearInputStates() {
+        this.buttonStates = {};
+        this.lastInputTime = 0;
     }
 }
 
@@ -51,34 +261,67 @@ class MainMenuScene extends Phaser.Scene {
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
-        // Create menu options
+        // Clear any existing menu buttons to prevent corruption
+        this.menuButtons = [];
+        
+        // Create menu options with safer text creation
         this.menuOptions.forEach((option, index) => {
-            const button = this.add.text(400, 320 + (index * 60), option, {
-                fontSize: '32px',
-                fill: '#95a5a6',
-                fontFamily: 'Arial'
-            }).setOrigin(0.5);
+            try {
+                const button = this.add.text(400, 320 + (index * 60), option, {
+                    fontSize: '32px',
+                    fill: '#95a5a6',
+                    fontFamily: 'Arial',
+                    // Add explicit text wrapping settings to prevent null data issues
+                    wordWrap: { width: 0 }  // Disable word wrapping
+                }).setOrigin(0.5);
 
-            button.setInteractive();
-            button.on('pointerdown', () => this.selectOption(index));
-            
-            this.menuButtons.push(button);
+                button.setInteractive();
+                button.on('pointerdown', () => this.selectOption(index));
+                
+                this.menuButtons.push(button);
+            } catch (error) {
+                console.error(`[TEXT DEBUG] Error creating menu button ${index}:`, error);
+            }
         });
 
-        // Highlight first option
-        this.updateSelection();
+        // Reset selection to ensure it's properly initialized
+        this.selectedOption = 0;
+        
+        // Highlight first option with delayed call to ensure text objects are ready
+        this.time.delayedCall(10, () => {
+            this.updateSelection();
+        });
 
         // Controller instructions
         this.add.text(400, 550, 'Xbox Controller: D-pad to navigate, A to select', {
             fontSize: '16px',
             fill: '#95a5a6',
-            fontFamily: 'Arial'
+            fontFamily: 'Arial',
+            wordWrap: { width: 0 }  // Disable word wrapping
         }).setOrigin(0.5);
 
-        // Set up gamepad support
+        // Set up gamepad support with immediate detection
         this.input.gamepad.once('connected', (pad) => {
             console.log('Controller connected:', pad.id);
         });
+        
+        // Proactively check for already connected controllers
+        this.time.delayedCall(100, () => {
+            if (this.input.gamepad.total > 0) {
+                const pad = this.input.gamepad.getPad(0);
+                if (pad) {
+                    console.log('Controller already connected:', pad.id);
+                }
+            }
+        });
+        
+        // Force gamepad detection by accessing navigator.getGamepads()
+        if (navigator.getGamepads) {
+            const gamepads = navigator.getGamepads();
+            if (gamepads && gamepads.length > 0) {
+                console.log('Native gamepad API detected controllers');
+            }
+        }
 
         // Set up keyboard controls as backup
         this.cursors = this.input.keyboard.createCursorKeys();
@@ -86,12 +329,81 @@ class MainMenuScene extends Phaser.Scene {
     }
 
     updateSelection() {
-        this.menuButtons.forEach((button, index) => {
-            if (index === this.selectedOption) {
-                button.setStyle({ fill: '#3498db' });
-            } else {
-                button.setStyle({ fill: '#95a5a6' });
+        try {
+            // Only skip if scene is explicitly destroyed, not just inactive
+            if (!this.scene || (this.scene.sys && this.scene.sys.isDestroyed)) {
+                return;
             }
+            
+            console.log('[SELECTION DEBUG] MainMenu updateSelection called, selectedOption:', this.selectedOption, 'menuButtons length:', this.menuButtons.length);
+            
+            // Check if buttons are corrupted and need rebuilding
+            let needsRebuild = false;
+            if (this.menuButtons.length === 0 || this.menuButtons.length !== this.menuOptions.length) {
+                needsRebuild = true;
+                console.log('[CORRUPTION DEBUG] MainMenu buttons missing, rebuilding...');
+            } else {
+                // Test if first button is corrupted
+                try {
+                    if (this.menuButtons[0] && this.menuButtons[0].setColor) {
+                        this.menuButtons[0].setColor('#95a5a6'); // Test call
+                    }
+                } catch (testError) {
+                    if (testError.message.includes('data.cut')) {
+                        needsRebuild = true;
+                        console.log('[CORRUPTION DEBUG] MainMenu buttons corrupted, rebuilding...');
+                    }
+                }
+            }
+            
+            if (needsRebuild) {
+                this.rebuildMenuButtons();
+                return; // Exit early, let the delayed updateSelection handle highlighting
+            }
+            
+            // Normal highlighting if buttons are healthy
+            this.menuButtons.forEach((button, index) => {
+                if (button && button.setColor) {
+                    const newColor = index === this.selectedOption ? '#3498db' : '#95a5a6';
+                    console.log(`[SELECTION DEBUG] MainMenu setting button ${index} to color ${newColor}`);
+                    button.setColor(newColor);
+                }
+            });
+        } catch (error) {
+            console.error('[TEXT DEBUG] Error in MainMenuScene updateSelection:', error.message);
+            // Try to rebuild on any error
+            this.rebuildMenuButtons();
+        }
+    }
+    
+    rebuildMenuButtons() {
+        console.log('[REBUILD DEBUG] Rebuilding MainMenu buttons...');
+        
+        // Clear corrupted buttons
+        this.menuButtons.forEach(button => {
+            if (button && button.destroy) {
+                try { button.destroy(); } catch (e) {}
+            }
+        });
+        this.menuButtons = [];
+        
+        // Recreate buttons
+        this.menuOptions.forEach((option, index) => {
+            const button = this.add.text(400, 320 + (index * 60), option, {
+                fontSize: '32px',
+                fill: '#95a5a6',
+                fontFamily: 'Arial',
+                wordWrap: { width: 0 }
+            }).setOrigin(0.5);
+
+            button.setInteractive();
+            button.on('pointerdown', () => this.selectOption(index));
+            this.menuButtons.push(button);
+        });
+        
+        // Highlight after rebuild
+        this.time.delayedCall(10, () => {
+            this.updateSelection();
         });
     }
 
@@ -127,30 +439,33 @@ class MainMenuScene extends Phaser.Scene {
             this.selectOption(this.selectedOption);
         }
 
-        // Controller input with simple detection
+        // Controller input with proper justPressed detection
         if (this.input.gamepad.total) {
             const gamepad = this.input.gamepad.getPad(0);
-            if (gamepad && globalInput.canAcceptInput()) {
-                // Check D-pad up
-                if ((gamepad.buttons && gamepad.buttons[12] && gamepad.buttons[12].pressed) ||
-                    (gamepad.up && gamepad.up.pressed) ||
-                    (gamepad.leftStick && gamepad.leftStick.y < -0.5)) {
+            if (gamepad) {
+                // Check D-pad up (with justPressed logic)
+                if (globalInput.wasButtonJustPressed(gamepad, 12) || // D-pad up
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'up') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up')) {
+                    console.log('[NAVIGATION DEBUG] MainMenu navigating up, from', this.selectedOption, 'to', Math.max(0, this.selectedOption - 1));
                     this.selectedOption = Math.max(0, this.selectedOption - 1);
                     this.updateSelection();
                 }
                 
-                // Check D-pad down  
-                if ((gamepad.buttons && gamepad.buttons[13] && gamepad.buttons[13].pressed) ||
-                    (gamepad.down && gamepad.down.pressed) ||
-                    (gamepad.leftStick && gamepad.leftStick.y > 0.5)) {
+                // Check D-pad down (with justPressed logic)
+                if (globalInput.wasButtonJustPressed(gamepad, 13) || // D-pad down
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'down') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down')) {
+                    console.log('[NAVIGATION DEBUG] MainMenu navigating down, from', this.selectedOption, 'to', Math.min(this.menuOptions.length - 1, this.selectedOption + 1));
                     this.selectedOption = Math.min(this.menuOptions.length - 1, this.selectedOption + 1);
                     this.updateSelection();
                 }
                 
-                // Check A button - try multiple ways
-                if ((gamepad.buttons && gamepad.buttons[0] && gamepad.buttons[0].pressed) ||
-                    (gamepad.A && gamepad.A.pressed)) {
-                    console.log('A button detected, calling selectOption');
+                // Check A button with reliable detection
+                const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'A');
+                if (aPressed) {
+                    console.log('A button just pressed, calling selectOption');
                     this.selectOption(this.selectedOption);
                 }
             }
@@ -181,30 +496,40 @@ class TherapyOfficeScene extends Phaser.Scene {
         this.add.rectangle(200, 400, 120, 80, 0x654321); // Desk
         this.add.rectangle(600, 400, 100, 60, 0x2c3e50); // Chair
 
-        // Patient folder button
+        // Clear any existing menu buttons to prevent corruption
+        this.menuButtons = [];
+
+        // Patient folder button with safe text creation
         const folderButton = this.add.text(200, 200, 'Patient Files', {
             fontSize: '24px',
             fill: '#95a5a6',
-            fontFamily: 'Arial'
+            fontFamily: 'Arial',
+            wordWrap: { width: 0 }  // Disable word wrapping
         }).setOrigin(0.5);
 
         folderButton.setInteractive();
         folderButton.on('pointerdown', () => this.selectOption(0));
         this.menuButtons.push(folderButton);
 
-        // Start session button
+        // Start session button with safe text creation
         const sessionButton = this.add.text(600, 200, 'Begin Session', {
             fontSize: '24px',
             fill: '#95a5a6',
-            fontFamily: 'Arial'
+            fontFamily: 'Arial',
+            wordWrap: { width: 0 }  // Disable word wrapping
         }).setOrigin(0.5);
 
         sessionButton.setInteractive();
         sessionButton.on('pointerdown', () => this.selectOption(1));
         this.menuButtons.push(sessionButton);
 
-        // Highlight first option
-        this.updateSelection();
+        // Reset selection to ensure it's properly initialized
+        this.selectedOption = 0;
+        
+        // Highlight first option with delayed call
+        this.time.delayedCall(10, () => {
+            this.updateSelection();
+        });
 
         // Instructions
         this.add.text(400, 550, 'Xbox Controller: D-pad to navigate, A to select, B to go back', {
@@ -220,12 +545,88 @@ class TherapyOfficeScene extends Phaser.Scene {
     }
 
     updateSelection() {
-        this.menuButtons.forEach((button, index) => {
-            if (index === this.selectedOption) {
-                button.setStyle({ fill: '#3498db' });
-            } else {
-                button.setStyle({ fill: '#95a5a6' });
+        try {
+            // Only skip if scene is explicitly destroyed, not just inactive
+            if (!this.scene || (this.scene.sys && this.scene.sys.isDestroyed)) {
+                return;
             }
+            
+            console.log('[SELECTION DEBUG] TherapyOffice updateSelection called, selectedOption:', this.selectedOption, 'menuButtons length:', this.menuButtons.length);
+            
+            // Check if buttons are corrupted and need rebuilding
+            let needsRebuild = false;
+            if (this.menuButtons.length === 0 || this.menuButtons.length !== this.menuOptions.length) {
+                needsRebuild = true;
+                console.log('[CORRUPTION DEBUG] TherapyOffice buttons missing, rebuilding...');
+            } else {
+                // Test if first button is corrupted
+                try {
+                    if (this.menuButtons[0] && this.menuButtons[0].setColor) {
+                        this.menuButtons[0].setColor('#95a5a6'); // Test call
+                    }
+                } catch (testError) {
+                    if (testError.message.includes('data.cut')) {
+                        needsRebuild = true;
+                        console.log('[CORRUPTION DEBUG] TherapyOffice buttons corrupted, rebuilding...');
+                    }
+                }
+            }
+            
+            if (needsRebuild) {
+                this.rebuildMenuButtons();
+                return; // Exit early, let the delayed updateSelection handle highlighting
+            }
+            
+            // Normal highlighting if buttons are healthy
+            this.menuButtons.forEach((button, index) => {
+                if (button && button.setColor) {
+                    const newColor = index === this.selectedOption ? '#3498db' : '#95a5a6';
+                    console.log(`[SELECTION DEBUG] TherapyOffice setting button ${index} to color ${newColor}`);
+                    button.setColor(newColor);
+                }
+            });
+        } catch (error) {
+            console.error('[TEXT DEBUG] Error in TherapyOfficeScene updateSelection:', error.message);
+            // Try to rebuild on any error
+            this.rebuildMenuButtons();
+        }
+    }
+    
+    rebuildMenuButtons() {
+        console.log('[REBUILD DEBUG] Rebuilding TherapyOffice buttons...');
+        
+        // Clear corrupted buttons
+        this.menuButtons.forEach(button => {
+            if (button && button.destroy) {
+                try { button.destroy(); } catch (e) {}
+            }
+        });
+        this.menuButtons = [];
+        
+        // Recreate buttons at their original positions
+        const folderButton = this.add.text(200, 200, 'Patient Files', {
+            fontSize: '24px',
+            fill: '#95a5a6',
+            fontFamily: 'Arial',
+            wordWrap: { width: 0 }
+        }).setOrigin(0.5);
+        folderButton.setInteractive();
+        folderButton.on('pointerdown', () => this.selectOption(0));
+        this.menuButtons.push(folderButton);
+        
+        const sessionButton = this.add.text(600, 200, 'Begin Session', {
+            fontSize: '24px',
+            fill: '#95a5a6',
+            fontFamily: 'Arial',
+            wordWrap: { width: 0 }
+        }).setOrigin(0.5);
+        sessionButton.setInteractive();
+        sessionButton.on('pointerdown', () => this.selectOption(1));
+        this.menuButtons.push(sessionButton);
+        
+        // Highlight after rebuild
+        this.time.delayedCall(10, () => {
+            this.updateSelection();
         });
     }
 
@@ -241,7 +642,8 @@ class TherapyOfficeScene extends Phaser.Scene {
 
     goBack() {
         if (!globalInput.canAcceptInput()) return;
-        this.scene.start('MainMenuScene');
+        console.log('[SCENE DEBUG] TherapyOfficeScene goBack() called');
+        safeSceneTransition(this, 'MainMenuScene', 'switch');
     }
 
     update() {
@@ -268,40 +670,53 @@ class TherapyOfficeScene extends Phaser.Scene {
             this.goBack();
         }
 
-        // Controller input
+        // Controller input with proper justPressed detection
         if (this.input.gamepad.total) {
             const gamepad = this.input.gamepad.getPad(0);
-            if (gamepad && globalInput.canAcceptInput()) {
-                // Navigation
-                if ((gamepad.buttons && gamepad.buttons[14] && gamepad.buttons[14].pressed) || // D-pad left
-                    (gamepad.buttons && gamepad.buttons[12] && gamepad.buttons[12].pressed) || // D-pad up
-                    (gamepad.left && gamepad.left.pressed) ||
-                    (gamepad.up && gamepad.up.pressed) ||
-                    (gamepad.leftStick && (gamepad.leftStick.x < -0.5 || gamepad.leftStick.y < -0.5))) {
+            if (gamepad) {
+                // Navigation - left/up
+                if (globalInput.wasButtonJustPressed(gamepad, 14) || // D-pad left
+                    globalInput.wasButtonJustPressed(gamepad, 12) || // D-pad up
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'left') ||
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'up') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'left') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up')) {
+                    console.log('[NAVIGATION DEBUG] TherapyOffice navigating left/up, from', this.selectedOption, 'to', Math.max(0, this.selectedOption - 1));
                     this.selectedOption = Math.max(0, this.selectedOption - 1);
                     this.updateSelection();
                 }
                 
-                if ((gamepad.buttons && gamepad.buttons[15] && gamepad.buttons[15].pressed) || // D-pad right
-                    (gamepad.buttons && gamepad.buttons[13] && gamepad.buttons[13].pressed) || // D-pad down
-                    (gamepad.right && gamepad.right.pressed) ||
-                    (gamepad.down && gamepad.down.pressed) ||
-                    (gamepad.leftStick && (gamepad.leftStick.x > 0.5 || gamepad.leftStick.y > 0.5))) {
+                // Navigation - right/down
+                if (globalInput.wasButtonJustPressed(gamepad, 15) || // D-pad right
+                    globalInput.wasButtonJustPressed(gamepad, 13) || // D-pad down
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'right') ||
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'down') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'right') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down')) {
+                    console.log('[NAVIGATION DEBUG] TherapyOffice navigating right/down, from', this.selectedOption, 'to', Math.min(this.menuOptions.length - 1, this.selectedOption + 1));
                     this.selectedOption = Math.min(this.menuOptions.length - 1, this.selectedOption + 1);
                     this.updateSelection();
                 }
                 
-                // A button
-                if ((gamepad.buttons && gamepad.buttons[0] && gamepad.buttons[0].pressed) ||
-                    (gamepad.A && gamepad.A.pressed)) {
-                    console.log('A button detected in office scene');
+                // A button with reliable detection
+                const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'A');
+                if (aPressed) {
+                    console.log('A button just pressed in office scene');
                     this.selectOption(this.selectedOption);
                 }
                 
-                // B button
-                if ((gamepad.buttons && gamepad.buttons[1] && gamepad.buttons[1].pressed) ||
-                    (gamepad.B && gamepad.B.pressed)) {
-                    console.log('B button detected in office scene');
+                // B button with reliable detection and detailed debugging
+                const bPressed = globalInput.wasButtonJustPressed(gamepad, 1) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'B');
+                if (bPressed) {
+                    console.log('[SCENE DEBUG] B button pressed in TherapyOfficeScene');
+                    console.log('[SCENE DEBUG] About to call goBack()');
+                    console.log('[SCENE DEBUG] Scene state before goBack:', {
+                        key: this.scene.key,
+                        isActive: this.scene.isActive(),
+                        gamepad: gamepad ? gamepad.id : 'null'
+                    });
                     this.goBack();
                 }
             }
@@ -371,7 +786,8 @@ class PatientFilesScene extends Phaser.Scene {
 
     goBack() {
         if (!globalInput.canAcceptInput()) return;
-        this.scene.start('TherapyOfficeScene');
+        console.log('[SCENE DEBUG] PatientFilesScene goBack() called');
+        safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
     }
 
     update() {
@@ -380,14 +796,21 @@ class PatientFilesScene extends Phaser.Scene {
             this.goBack();
         }
 
-        // Controller input
+        // Controller input with proper justPressed detection
         if (this.input.gamepad.total) {
             const gamepad = this.input.gamepad.getPad(0);
-            if (gamepad && globalInput.canAcceptInput()) {
-                // B button
-                if ((gamepad.buttons && gamepad.buttons[1] && gamepad.buttons[1].pressed) ||
-                    (gamepad.B && gamepad.B.pressed)) {
-                    console.log('B button detected in patient files');
+            if (gamepad) {
+                // B button with reliable detection and detailed debugging
+                const bPressed = globalInput.wasButtonJustPressed(gamepad, 1) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'B');
+                if (bPressed) {
+                    console.log('[SCENE DEBUG] B button pressed in PatientFilesScene');
+                    console.log('[SCENE DEBUG] About to call goBack()');
+                    console.log('[SCENE DEBUG] Scene state before goBack:', {
+                        key: this.scene.key,
+                        isActive: this.scene.isActive(),
+                        gamepad: gamepad ? gamepad.id : 'null'
+                    });
                     this.goBack();
                 }
             }
@@ -400,6 +823,9 @@ class TherapySessionScene extends Phaser.Scene {
         super({ key: 'TherapySessionScene' });
         this.interactionCount = 0;
         this.maxInteractions = 6;
+        this.selectedResponse = 0;
+        this.responseButtons = [];
+        this.awaitingInput = false;
     }
 
     create() {
@@ -446,9 +872,17 @@ class TherapySessionScene extends Phaser.Scene {
 
         // Response options
         this.createResponseOptions();
+        
+        // Set up keyboard controls
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     }
 
     createResponseOptions() {
+        // Clear previous response buttons
+        this.responseButtons.forEach(button => button.destroy());
+        this.responseButtons = [];
+        
         const responses = [
             "Tell me more about your transformation needs, Zara.",
             "Finn, how do you feel when Zara transforms?",
@@ -458,16 +892,49 @@ class TherapySessionScene extends Phaser.Scene {
         responses.forEach((response, index) => {
             const button = this.add.text(400, 520 + (index * 25), `${index + 1}. ${response}`, {
                 fontSize: '14px',
-                fill: '#3498db',
+                fill: '#95a5a6',
                 fontFamily: 'Arial'
             }).setOrigin(0.5);
 
             button.setInteractive();
             button.on('pointerdown', () => this.handleResponse(index));
+            this.responseButtons.push(button);
         });
+        
+        this.selectedResponse = 0;
+        this.awaitingInput = true;
+        this.updateResponseSelection();
+    }
+    
+    updateResponseSelection() {
+        try {
+            // Only skip if scene is explicitly destroyed, not just inactive
+            if (!this.scene || (this.scene.sys && this.scene.sys.isDestroyed)) {
+                return;
+            }
+            
+            this.responseButtons.forEach((button, index) => {
+                if (button && button.setStyle && button.scene && button.scene.sys && !button.scene.sys.isDestroyed) {
+                    if (index === this.selectedResponse) {
+                        button.setStyle({ fill: '#3498db' });
+                    } else {
+                        button.setStyle({ fill: '#95a5a6' });
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('[TEXT DEBUG] Error in TherapySessionScene updateResponseSelection:', {
+                error: error.message,
+                stack: error.stack,
+                responseButtonsLength: this.responseButtons ? this.responseButtons.length : 'null',
+                selectedResponse: this.selectedResponse,
+                sceneActive: this.scene ? this.scene.isActive() : 'no scene'
+            });
+        }
     }
 
     handleResponse(responseIndex) {
+        this.awaitingInput = false;
         this.interactionCount++;
         this.interactionText.setText(`Interactions: ${this.interactionCount}/${this.maxInteractions}`);
 
@@ -482,13 +949,66 @@ class TherapySessionScene extends Phaser.Scene {
 
         if (this.interactionCount >= this.maxInteractions) {
             this.time.delayedCall(2000, () => {
-                this.scene.start('SessionReviewScene');
+                console.log('[SCENE DEBUG] TherapySessionScene completing session, transitioning to review');
+                safeSceneTransition(this, 'SessionReviewScene', 'switch');
             });
         } else {
             // Clear and recreate response options
             this.time.delayedCall(1500, () => {
                 this.createResponseOptions();
             });
+        }
+    }
+    
+    update() {
+        if (!this.awaitingInput) return;
+        
+        // Keyboard controls
+        if (this.cursors.up.justDown) {
+            if (globalInput.canAcceptInput()) {
+                this.selectedResponse = Math.max(0, this.selectedResponse - 1);
+                this.updateResponseSelection();
+            }
+        }
+        
+        if (this.cursors.down.justDown) {
+            if (globalInput.canAcceptInput()) {
+                this.selectedResponse = Math.min(this.responseButtons.length - 1, this.selectedResponse + 1);
+                this.updateResponseSelection();
+            }
+        }
+        
+        if (this.enterKey.justDown) {
+            this.handleResponse(this.selectedResponse);
+        }
+        
+        // Controller input
+        if (this.input.gamepad.total) {
+            const gamepad = this.input.gamepad.getPad(0);
+            if (gamepad) {
+                // D-pad up
+                if (globalInput.wasButtonJustPressed(gamepad, 12) || // D-pad up
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'up') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up')) {
+                    this.selectedResponse = Math.max(0, this.selectedResponse - 1);
+                    this.updateResponseSelection();
+                }
+                
+                // D-pad down
+                if (globalInput.wasButtonJustPressed(gamepad, 13) || // D-pad down
+                    globalInput.wasNamedButtonJustPressed(gamepad, 'down') ||
+                    globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down')) {
+                    this.selectedResponse = Math.min(this.responseButtons.length - 1, this.selectedResponse + 1);
+                    this.updateResponseSelection();
+                }
+                
+                // A button to select response - reliable detection
+                const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'A');
+                if (aPressed) {
+                    this.handleResponse(this.selectedResponse);
+                }
+            }
         }
     }
 }
@@ -554,9 +1074,40 @@ class SessionReviewScene extends Phaser.Scene {
         backButton.setInteractive();
         backButton.on('pointerdown', () => {
             if (globalInput.canAcceptInput()) {
-                this.scene.start('TherapyOfficeScene');
+                console.log('[SCENE DEBUG] SessionReviewScene Return to Office clicked');
+                safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
             }
         });
+        
+        // Set up keyboard controls
+        this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+        this.escKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    }
+    
+    update() {
+        // Keyboard controls
+        if (this.enterKey.justDown || this.escKey.justDown) {
+            if (globalInput.canAcceptInput()) {
+                console.log('[SCENE DEBUG] SessionReviewScene keyboard input detected');
+                safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
+            }
+        }
+        
+        // Controller input
+        if (this.input.gamepad.total) {
+            const gamepad = this.input.gamepad.getPad(0);
+            if (gamepad) {
+                // A button or B button to return - reliable detection
+                const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'A');
+                const bPressed = globalInput.wasButtonJustPressed(gamepad, 1) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'B');
+                if (aPressed || bPressed) {
+                    console.log('[SCENE DEBUG] SessionReviewScene controller input detected', {aPressed, bPressed});
+                    safeSceneTransition(this, 'TherapyOfficeScene', 'switch');
+                }
+            }
+        }
     }
 }
 
@@ -573,7 +1124,55 @@ const config = {
     }
 };
 
+// Proactive controller detection - start before game loads
+function detectControllers() {
+    if (navigator.getGamepads) {
+        const gamepads = navigator.getGamepads();
+        for (let i = 0; i < gamepads.length; i++) {
+            if (gamepads[i]) {
+                console.log('Controller detected early:', gamepads[i].id);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Start checking for controllers immediately
+const controllerCheckInterval = setInterval(() => {
+    if (detectControllers()) {
+        console.log('Controller found, ready for game');
+        clearInterval(controllerCheckInterval);
+    }
+}, 50); // Check every 50ms
+
+// Clear interval after 5 seconds to avoid infinite checking
+setTimeout(() => {
+    clearInterval(controllerCheckInterval);
+}, 5000);
+
 // Start the game
 console.log('Starting Phaser game with config:', config);
 const game = new Phaser.Game(config);
 console.log('Game created:', game);
+
+// Force controller detection after game loads
+game.events.once('ready', () => {
+    console.log('Game ready, forcing controller detection...');
+    
+    // Force the game to check for gamepads repeatedly
+    const forceDetection = setInterval(() => {
+        if (game.input && game.input.gamepad) {
+            // Force Phaser to refresh gamepad list
+            game.input.gamepad.refreshPads();
+            
+            if (game.input.gamepad.total > 0) {
+                console.log('Controller detected after game ready:', game.input.gamepad.total);
+                clearInterval(forceDetection);
+            }
+        }
+    }, 100);
+    
+    // Stop trying after 3 seconds
+    setTimeout(() => clearInterval(forceDetection), 3000);
+});
