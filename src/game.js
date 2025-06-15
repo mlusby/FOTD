@@ -1629,9 +1629,7 @@ class TherapySessionScene extends Phaser.Scene {
         });
     }
 
-    // OLD METHODS REMOVED - Now using snippet-based system
-    
-    startTypewriterEffect(fullText, onComplete, onSkip) {
+    updateInteractionSelection() {
         
         // Clear previous response buttons
         this.responseButtons.forEach(button => button.destroy());
@@ -1838,7 +1836,7 @@ class TherapySessionScene extends Phaser.Scene {
         
         this.startTypewriterEffect(fullText, normalComplete, skipComplete);
     }
-    
+
     updateInteractionSelection() {
         // Highlight selected interaction option
         this.responseButtons.forEach((button, index) => {
