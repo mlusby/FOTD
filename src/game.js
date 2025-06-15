@@ -1168,6 +1168,11 @@ class TherapySessionScene extends Phaser.Scene {
         this.currentFullText = null;
         this.currentOnComplete = null;
         this.currentOnSkip = null;
+        
+        // Snippet system properties
+        this.currentSnippets = [];
+        this.notesOpen = false;
+        this.currentSpeaker = 'zara'; // Start with Zara
     }
 
     create() {
@@ -1213,29 +1218,15 @@ class TherapySessionScene extends Phaser.Scene {
             wordWrap: { width: 650 }
         }).setOrigin(0, 0.5);  // Left-aligned to prevent shifting
 
-        // Initialize flags properly before starting typewriter
+        // Initialize flags properly before starting snippet system
         this.awaitingInput = false;
         this.typewriterActive = false;
         console.log('[SCENE DEBUG] TherapySession create() - initialized flags');
         
-        // Start initial dialogue with typewriter effect after a small delay to ensure scene is ready
+        // Start session with snippet system after a small delay to ensure scene is ready
         this.time.delayedCall(100, () => {
-            console.log('[SCENE DEBUG] Starting initial typewriter effect');
-            const initialText = 'Zara: "He never understands my need for personal space when I transform..."';
-            const normalCallback = () => {
-                console.log('[SCENE DEBUG] Normal callback triggered for initial dialogue');
-                // Normal delay before showing options
-                this.time.delayedCall(400, () => {
-                    console.log('[SCENE DEBUG] Creating simple response options after normal delay');
-                    this.createSimpleResponseOptions();
-                });
-            };
-            const skipCallback = () => {
-                console.log('[SCENE DEBUG] Skip callback triggered for initial dialogue');
-                // Immediate options when skipped
-                this.createSimpleResponseOptions();
-            };
-            this.startTypewriterEffect(initialText, normalCallback, skipCallback);
+            console.log('[SCENE DEBUG] Starting snippet-based session');
+            this.deliverNextSnippet();
         });
         
         // Set up keyboard controls
@@ -1254,22 +1245,60 @@ class TherapySessionScene extends Phaser.Scene {
         }
     }
 
-    createSimpleResponseOptions() {
+    deliverNextSnippet() {
+        console.log('[SNIPPET DEBUG] Delivering next snippet');
+        
+        // Get available snippets for current speaker
+        const availableSnippets = conversationSystem.getAvailableSnippets(this.currentSpeaker);
+        console.log('[SNIPPET DEBUG] Available snippets for', this.currentSpeaker, ':', availableSnippets.length);
+        
+        if (availableSnippets.length === 0) {
+            console.log('[SNIPPET DEBUG] No available snippets, switching speaker or ending session');
+            this.switchSpeakerOrEnd();
+            return;
+        }
+        
+        // Select a random snippet (in real implementation, this could be more sophisticated)
+        const snippet = availableSnippets[Math.floor(Math.random() * availableSnippets.length)];
+        console.log('[SNIPPET DEBUG] Selected snippet:', snippet.id, snippet.text);
+        
+        // Add to session notes
+        conversationSystem.addSnippetToSession(snippet.id);
+        
+        // Display snippet with typewriter effect
+        const speakerName = this.currentSpeaker === 'zara' ? 'Zara' : 'Finn';
+        const fullText = `${speakerName}: "${snippet.text}"`;
+        
+        const normalCallback = () => {
+            console.log('[SNIPPET DEBUG] Normal completion - showing interaction options');
+            this.time.delayedCall(400, () => {
+                this.createInteractionOptions();
+            });
+        };
+        
+        const skipCallback = () => {
+            console.log('[SNIPPET DEBUG] Skip completion - showing interaction options immediately');
+            this.createInteractionOptions();
+        };
+        
+        this.startTypewriterEffect(fullText, normalCallback, skipCallback);
+    }
+    
+    createInteractionOptions() {
         // Clear previous response buttons
         this.responseButtons.forEach(button => button.destroy());
         this.responseButtons = [];
         
-        const responses = [
-            "1. Tell me more about your transformation needs, Zara.",
-            "2. Finn, how do you feel when Zara transforms?", 
-            "3. Let's explore communication strategies for this."
+        const options = [
+            "Gather More Information",
+            "Review Notes", 
+            "Propose Insight"
         ];
 
-        responses.forEach((response, index) => {
+        options.forEach((option, index) => {
             const yPos = 380 + (index * 30);
             
-            // Create simple text without complex styling
-            const button = this.add.text(400, yPos, response, {
+            const button = this.add.text(400, yPos, `${index + 1}. ${option}`, {
                 fontSize: '16px',
                 fill: '#ffffff',
                 fontFamily: 'Arial'
@@ -1277,7 +1306,7 @@ class TherapySessionScene extends Phaser.Scene {
 
             button.setInteractive();
             button.on('pointerdown', () => {
-                this.handleResponse(index);
+                this.handleInteraction(index);
             });
             
             this.responseButtons.push(button);
@@ -1286,6 +1315,65 @@ class TherapySessionScene extends Phaser.Scene {
         this.selectedResponse = 0;
         this.awaitingInput = true;
         this.updateResponseSelection();
+    }
+    
+    handleInteraction(optionIndex) {
+        console.log('[INTERACTION DEBUG] Selected option:', optionIndex);
+        
+        this.awaitingInput = false;
+        this.interactionCount++;
+        this.interactionText.setText(`Interactions: ${this.interactionCount}/${this.maxInteractions}`);
+
+        // Clear response buttons
+        this.responseButtons.forEach(button => button.destroy());
+        this.responseButtons = [];
+
+        switch(optionIndex) {
+            case 0: // Gather More Information
+                this.switchSpeakerOrEnd();
+                break;
+            case 1: // Review Notes
+                this.openNotesInterface();
+                break;
+            case 2: // Propose Insight
+                this.openInsightInterface();
+                break;
+        }
+    }
+    
+    switchSpeakerOrEnd() {
+        if (this.interactionCount >= this.maxInteractions) {
+            console.log('[SESSION DEBUG] Session complete, transitioning to review');
+            this.time.delayedCall(1000, () => {
+                safeSceneTransition(this, 'SessionReviewScene');
+            });
+            return;
+        }
+        
+        // Switch to other speaker
+        this.currentSpeaker = this.currentSpeaker === 'zara' ? 'finn' : 'zara';
+        console.log('[SESSION DEBUG] Switched speaker to:', this.currentSpeaker);
+        
+        // Deliver next snippet
+        this.time.delayedCall(500, () => {
+            this.deliverNextSnippet();
+        });
+    }
+    
+    openNotesInterface() {
+        console.log('[NOTES DEBUG] Opening notes interface (placeholder)');
+        // For now, just continue with next snippet
+        this.time.delayedCall(1000, () => {
+            this.createInteractionOptions();
+        });
+    }
+    
+    openInsightInterface() {
+        console.log('[INSIGHT DEBUG] Opening insight interface (placeholder)');
+        // For now, just continue with next snippet
+        this.time.delayedCall(1000, () => {
+            this.createInteractionOptions();
+        });
     }
 
     createResponseOptions() {
