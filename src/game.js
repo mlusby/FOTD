@@ -826,6 +826,8 @@ class TherapySessionScene extends Phaser.Scene {
         this.selectedResponse = 0;
         this.responseButtons = [];
         this.awaitingInput = false;
+        this.typewriterActive = false;
+        this.typewriterTimer = null;
     }
 
     create() {
@@ -861,14 +863,14 @@ class TherapySessionScene extends Phaser.Scene {
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
-        // Dialogue area
-        this.dialogueBox = this.add.rectangle(400, 450, 750, 120, 0x34495e);
-        this.dialogueText = this.add.text(400, 450, 'Zara: "He never understands my need for personal space when I transform..."', {
+        // Dialogue area - moved higher to make room for response buttons
+        this.dialogueBox = this.add.rectangle(400, 320, 750, 80, 0x34495e);
+        this.dialogueText = this.add.text(75, 320, 'Zara: "He never understands my need for personal space when I transform..."', {
             fontSize: '16px',
             fill: '#ecf0f1',
             fontFamily: 'Arial',
-            wordWrap: { width: 700 }
-        }).setOrigin(0.5);
+            wordWrap: { width: 650 }
+        }).setOrigin(0, 0.5);  // Left-aligned to prevent shifting
 
         // Response options
         this.createResponseOptions();
@@ -879,6 +881,8 @@ class TherapySessionScene extends Phaser.Scene {
     }
 
     createResponseOptions() {
+        console.log('[RESPONSE DEBUG] createResponseOptions called');
+        
         // Clear previous response buttons
         this.responseButtons.forEach(button => button.destroy());
         this.responseButtons = [];
@@ -889,20 +893,28 @@ class TherapySessionScene extends Phaser.Scene {
             "Let's explore communication strategies for this."
         ];
 
+        console.log('[RESPONSE DEBUG] Creating', responses.length, 'response buttons');
+        
         responses.forEach((response, index) => {
-            const button = this.add.text(400, 520 + (index * 25), `${index + 1}. ${response}`, {
-                fontSize: '14px',
+            const yPos = 380 + (index * 25); // Move response buttons higher on screen
+            const button = this.add.text(400, yPos, `${index + 1}. ${response}`, {
+                fontSize: '14px',  
                 fill: '#95a5a6',
-                fontFamily: 'Arial'
+                fontFamily: 'Arial',
+                wordWrap: { width: 600 },  
+                backgroundColor: '#2c3e50',  // Better contrast background
+                padding: { x: 8, y: 4 }     
             }).setOrigin(0.5);
 
             button.setInteractive();
             button.on('pointerdown', () => this.handleResponse(index));
             this.responseButtons.push(button);
+            console.log('[RESPONSE DEBUG] Created response button', index, 'at Y position', yPos, 'with text:', `${index + 1}. ${response}`);
         });
         
         this.selectedResponse = 0;
         this.awaitingInput = true;
+        console.log('[RESPONSE DEBUG] Set awaitingInput to true, calling updateResponseSelection');
         this.updateResponseSelection();
     }
     
@@ -913,30 +925,99 @@ class TherapySessionScene extends Phaser.Scene {
                 return;
             }
             
-            this.responseButtons.forEach((button, index) => {
-                if (button && button.setStyle && button.scene && button.scene.sys && !button.scene.sys.isDestroyed) {
-                    if (index === this.selectedResponse) {
-                        button.setStyle({ fill: '#3498db' });
-                    } else {
-                        button.setStyle({ fill: '#95a5a6' });
+            console.log('[SELECTION DEBUG] TherapySession updateResponseSelection called, selectedResponse:', this.selectedResponse, 'responseButtons length:', this.responseButtons.length);
+            
+            // Check if response buttons are corrupted and need rebuilding
+            let needsRebuild = false;
+            if (this.responseButtons.length === 0) {
+                needsRebuild = true;
+                console.log('[CORRUPTION DEBUG] TherapySession response buttons missing, rebuilding...');
+            } else {
+                // Test if first button is corrupted
+                try {
+                    if (this.responseButtons[0] && this.responseButtons[0].setColor) {
+                        this.responseButtons[0].setColor('#95a5a6'); // Test call
                     }
+                } catch (testError) {
+                    if (testError.message.includes('data.cut')) {
+                        needsRebuild = true;
+                        console.log('[CORRUPTION DEBUG] TherapySession response buttons corrupted, rebuilding...');
+                    }
+                }
+            }
+            
+            if (needsRebuild) {
+                this.rebuildResponseButtons();
+                return; // Exit early, let the delayed updateResponseSelection handle highlighting
+            }
+            
+            // Normal highlighting if buttons are healthy
+            this.responseButtons.forEach((button, index) => {
+                if (button && button.setColor) {
+                    const newColor = index === this.selectedResponse ? '#3498db' : '#95a5a6';
+                    console.log(`[SELECTION DEBUG] TherapySession setting response button ${index} to color ${newColor}`);
+                    button.setColor(newColor);
                 }
             });
         } catch (error) {
-            console.error('[TEXT DEBUG] Error in TherapySessionScene updateResponseSelection:', {
-                error: error.message,
-                stack: error.stack,
-                responseButtonsLength: this.responseButtons ? this.responseButtons.length : 'null',
-                selectedResponse: this.selectedResponse,
-                sceneActive: this.scene ? this.scene.isActive() : 'no scene'
-            });
+            console.error('[TEXT DEBUG] Error in TherapySessionScene updateResponseSelection:', error.message);
+            // Try to rebuild on any error
+            this.rebuildResponseButtons();
         }
+    }
+    
+    rebuildResponseButtons() {
+        console.log('[REBUILD DEBUG] Rebuilding TherapySession response buttons...');
+        
+        // Clear corrupted buttons
+        this.responseButtons.forEach(button => {
+            if (button && button.destroy) {
+                try { button.destroy(); } catch (e) {}
+            }
+        });
+        this.responseButtons = [];
+        
+        // Recreate response buttons
+        const responses = [
+            "Tell me more about your transformation needs, Zara.",
+            "Finn, how do you feel when Zara transforms?",
+            "Let's explore communication strategies for this."
+        ];
+
+        responses.forEach((response, index) => {
+            const button = this.add.text(400, 380 + (index * 25), `${index + 1}. ${response}`, {
+                fontSize: '14px',
+                fill: '#95a5a6',
+                fontFamily: 'Arial',
+                wordWrap: { width: 600 },
+                backgroundColor: '#2c3e50',
+                padding: { x: 8, y: 4 }
+            }).setOrigin(0.5);
+
+            button.setInteractive();
+            button.on('pointerdown', () => this.handleResponse(index));
+            this.responseButtons.push(button);
+        });
+        
+        // Highlight after rebuild
+        this.time.delayedCall(10, () => {
+            this.updateResponseSelection();
+        });
     }
 
     handleResponse(responseIndex) {
         this.awaitingInput = false;
+        this.typewriterActive = true;
         this.interactionCount++;
         this.interactionText.setText(`Interactions: ${this.interactionCount}/${this.maxInteractions}`);
+
+        // Clear existing response buttons immediately
+        this.responseButtons.forEach(button => {
+            if (button && button.destroy) {
+                button.destroy();
+            }
+        });
+        this.responseButtons = [];
 
         // Simple response system
         const responses = [
@@ -945,34 +1026,85 @@ class TherapySessionScene extends Phaser.Scene {
             "Both: 'We've never really talked about boundaries during transformation...'"
         ];
 
-        this.dialogueText.setText(responses[responseIndex]);
-
-        if (this.interactionCount >= this.maxInteractions) {
-            this.time.delayedCall(2000, () => {
-                console.log('[SCENE DEBUG] TherapySessionScene completing session, transitioning to review');
-                safeSceneTransition(this, 'SessionReviewScene', 'switch');
-            });
-        } else {
-            // Clear and recreate response options
-            this.time.delayedCall(1500, () => {
-                this.createResponseOptions();
-            });
+        const fullText = responses[responseIndex];
+        this.startTypewriterEffect(fullText, () => {
+            // Callback when typewriter is complete
+            console.log('[TYPEWRITER DEBUG] Typewriter effect completed');
+            this.typewriterActive = false;
+            
+            if (this.interactionCount >= this.maxInteractions) {
+                console.log('[TYPEWRITER DEBUG] Max interactions reached, transitioning to review scene');
+                this.time.delayedCall(1000, () => {
+                    console.log('[SCENE DEBUG] TherapySessionScene completing session, transitioning to review');
+                    safeSceneTransition(this, 'SessionReviewScene', 'switch');
+                });
+            } else {
+                // Show new response options after a brief pause
+                console.log('[TYPEWRITER DEBUG] Creating new response options after delay');
+                this.time.delayedCall(800, () => {
+                    console.log('[TYPEWRITER DEBUG] Delay complete, calling createResponseOptions');
+                    this.createResponseOptions();
+                });
+            }
+        });
+    }
+    
+    startTypewriterEffect(fullText, onComplete) {
+        // Clear any existing typewriter timer
+        if (this.typewriterTimer) {
+            this.typewriterTimer.destroy();
         }
+        
+        // Start with empty text
+        this.dialogueText.setText('');
+        
+        let currentIndex = 0;
+        const typeSpeed = 30; // milliseconds per character
+        
+        this.typewriterTimer = this.time.addEvent({
+            delay: typeSpeed,
+            callback: () => {
+                if (currentIndex < fullText.length) {
+                    // Add next character
+                    const displayText = fullText.substring(0, currentIndex + 1);
+                    this.dialogueText.setText(displayText);
+                    currentIndex++;
+                } else {
+                    // Typewriter complete
+                    console.log('[TYPEWRITER DEBUG] Typewriter timer completed, calling onComplete callback');
+                    this.typewriterTimer.destroy();
+                    this.typewriterTimer = null;
+                    if (onComplete) {
+                        console.log('[TYPEWRITER DEBUG] Executing onComplete callback');
+                        onComplete();
+                    } else {
+                        console.log('[TYPEWRITER DEBUG] No onComplete callback provided');
+                    }
+                }
+            },
+            repeat: fullText.length - 1
+        });
     }
     
     update() {
-        if (!this.awaitingInput) return;
+        if (!this.awaitingInput || this.typewriterActive) return;
         
-        // Keyboard controls
+        // Keyboard controls with faster response for dialogue
         if (this.cursors.up.justDown) {
-            if (globalInput.canAcceptInput()) {
+            // Use shorter delay for dialogue navigation responsiveness
+            const now = Date.now();
+            if (now - globalInput.lastInputTime > 50) { // Much shorter delay for dialogue
+                globalInput.lastInputTime = now;
                 this.selectedResponse = Math.max(0, this.selectedResponse - 1);
                 this.updateResponseSelection();
             }
         }
         
         if (this.cursors.down.justDown) {
-            if (globalInput.canAcceptInput()) {
+            // Use shorter delay for dialogue navigation responsiveness
+            const now = Date.now();
+            if (now - globalInput.lastInputTime > 50) { // Much shorter delay for dialogue
+                globalInput.lastInputTime = now;
                 this.selectedResponse = Math.min(this.responseButtons.length - 1, this.selectedResponse + 1);
                 this.updateResponseSelection();
             }
@@ -986,20 +1118,32 @@ class TherapySessionScene extends Phaser.Scene {
         if (this.input.gamepad.total) {
             const gamepad = this.input.gamepad.getPad(0);
             if (gamepad) {
-                // D-pad up
+                // D-pad up with faster response for dialogue navigation
                 if (globalInput.wasButtonJustPressed(gamepad, 12) || // D-pad up
                     globalInput.wasNamedButtonJustPressed(gamepad, 'up') ||
                     globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'up')) {
-                    this.selectedResponse = Math.max(0, this.selectedResponse - 1);
-                    this.updateResponseSelection();
+                    // Use shorter delay for more responsive dialogue navigation
+                    const now = Date.now();
+                    if (now - globalInput.lastInputTime > 50) {
+                        globalInput.lastInputTime = now;
+                        console.log('[NAVIGATION DEBUG] TherapySession navigating up, from', this.selectedResponse, 'to', Math.max(0, this.selectedResponse - 1));
+                        this.selectedResponse = Math.max(0, this.selectedResponse - 1);
+                        this.updateResponseSelection();
+                    }
                 }
                 
-                // D-pad down
+                // D-pad down with faster response for dialogue navigation
                 if (globalInput.wasButtonJustPressed(gamepad, 13) || // D-pad down
                     globalInput.wasNamedButtonJustPressed(gamepad, 'down') ||
                     globalInput.wasThumbstickJustMoved(gamepad, 'leftStick', 'down')) {
-                    this.selectedResponse = Math.min(this.responseButtons.length - 1, this.selectedResponse + 1);
-                    this.updateResponseSelection();
+                    // Use shorter delay for more responsive dialogue navigation
+                    const now = Date.now();
+                    if (now - globalInput.lastInputTime > 50) {
+                        globalInput.lastInputTime = now;
+                        console.log('[NAVIGATION DEBUG] TherapySession navigating down, from', this.selectedResponse, 'to', Math.min(this.responseButtons.length - 1, this.selectedResponse + 1));
+                        this.selectedResponse = Math.min(this.responseButtons.length - 1, this.selectedResponse + 1);
+                        this.updateResponseSelection();
+                    }
                 }
                 
                 // A button to select response - reliable detection
