@@ -912,18 +912,19 @@ class TherapyOfficeScene extends Phaser.Scene {
     constructor() {
         super({ key: 'TherapyOfficeScene' });
         this.selectedOption = 0;
-        this.menuOptions = ['Patient Files', 'Begin Session'];
+        this.menuOptions = ['Patient Files', 'Start Session'];
         this.menuButtons = [];
         this.pipeIndicator = null;
     }
 
     preload() {
         this.load.image('pipe-icon', 'assets/images/pipeicon.png');
+        this.load.image('therapist-office', 'assets/images/TherapistOffice.png');
     }
 
     create() {
-        // Office background
-        this.add.rectangle(400, 300, 800, 600, 0x8b4513);
+        // Office background image
+        this.add.image(400, 300, 'therapist-office').setDisplaySize(800, 600);
         
         // Office title
         this.add.text(400, 50, 'Dr. Freud\'s Office', {
@@ -932,17 +933,13 @@ class TherapyOfficeScene extends Phaser.Scene {
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
-        // Placeholder for office furniture/decorations
-        this.add.rectangle(200, 400, 120, 80, 0x654321); // Desk
-        this.add.rectangle(600, 400, 100, 60, 0x2c3e50); // Chair
-
         // Clear any existing menu buttons to prevent corruption
         this.menuButtons = [];
 
-        // Patient folder button with safe text creation
-        const folderButton = this.add.text(200, 200, 'Patient Files', {
+        // Patient Files label positioned above folders on the left
+        const folderButton = this.add.text(200, 250, 'Patient Files', {
             fontSize: '24px',
-            fill: '#95a5a6',
+            fill: '#ecf0f1',
             fontFamily: 'Arial',
             wordWrap: { width: 0 }  // Disable word wrapping
         }).setOrigin(0.5);
@@ -951,10 +948,10 @@ class TherapyOfficeScene extends Phaser.Scene {
         folderButton.on('pointerdown', () => this.selectOption(0));
         this.menuButtons.push(folderButton);
 
-        // Start session button with safe text creation
-        const sessionButton = this.add.text(600, 200, 'Begin Session', {
+        // Start Session label positioned above clipboard on the right
+        const sessionButton = this.add.text(600, 250, 'Start Session', {
             fontSize: '24px',
-            fill: '#95a5a6',
+            fill: '#ecf0f1',
             fontFamily: 'Arial',
             wordWrap: { width: 0 }  // Disable word wrapping
         }).setOrigin(0.5);
@@ -1313,10 +1310,18 @@ class TherapySessionScene extends Phaser.Scene {
         this.currentSpeaker = 'zara'; // Start with Zara
     }
 
+    preload() {
+        this.load.image('couch-background', 'assets/images/CouchBackground.png');
+        this.load.image('finn-sitting', 'assets/images/FinnSitting.png');
+        this.load.image('zara-sitting', 'assets/images/ZaraSitting.png');
+        this.load.image('finn-talking', 'assets/images/FinnTalking.png');
+        this.load.image('zara-talking', 'assets/images/ZaraTalking.png');
+    }
+
     create() {
         try {
-            // Session room background
-            this.add.rectangle(400, 300, 800, 600, 0x2c3e50);
+            // Session room background - couch therapy setting
+            this.add.image(400, 300, 'couch-background').setDisplaySize(800, 600);
         
         // Title
         this.add.text(400, 50, 'Therapy Session - Zara & Finn', {
@@ -1325,16 +1330,16 @@ class TherapySessionScene extends Phaser.Scene {
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
-        // Character placeholders
-        this.add.circle(250, 250, 50, 0xe74c3c); // Dragon (red)
-        this.add.text(250, 320, 'Zara (Dragon)', {
+        // Character sprites positioned farther apart on the couch (reduced to 80% of 3x size)
+        this.zaraSprite = this.add.image(200, 350, 'zara-sitting').setDisplaySize(288, 360); // Zara on far left
+        this.add.text(200, 530, 'Zara (Dragon)', {
             fontSize: '16px',
             fill: '#ecf0f1',
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
-        this.add.circle(550, 250, 50, 0xf39c12); // Human (orange)
-        this.add.text(550, 320, 'Finn (Human)', {
+        this.finnSprite = this.add.image(600, 350, 'finn-sitting').setDisplaySize(288, 360); // Finn on far right  
+        this.add.text(600, 530, 'Finn (Human)', {
             fontSize: '16px',
             fill: '#ecf0f1',
             fontFamily: 'Arial'
@@ -1347,14 +1352,9 @@ class TherapySessionScene extends Phaser.Scene {
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
-        // Dialogue area - moved higher to make room for response buttons
-        this.dialogueBox = this.add.rectangle(400, 320, 750, 80, 0x34495e);
-        this.dialogueText = this.add.text(75, 320, '', {
-            fontSize: '16px',
-            fill: '#ecf0f1',
-            fontFamily: 'Arial',
-            wordWrap: { width: 650 }
-        }).setOrigin(0, 0.5);  // Left-aligned to prevent shifting
+        // Initialize dialogue bubble properties (will be created dynamically)
+        this.currentDialogueBubble = null;
+        this.currentDialogueText = null;
 
         // Initialize flags properly before starting snippet system
         this.awaitingInput = false;
@@ -1386,18 +1386,23 @@ class TherapySessionScene extends Phaser.Scene {
     showTopicSelection() {
         console.log('[TOPIC DEBUG] Showing topic selection for', this.currentSpeaker);
         
-        // Clear previous response buttons
+        // Clear previous response buttons and background
         this.responseButtons.forEach(button => button.destroy());
+        if (this.optionsBackground) this.optionsBackground.destroy();
         this.responseButtons = [];
         
         // Get available topics from conversation system
         const topics = conversationSystem.getAvailableTopics();
 
+        // Create darker transparent background for better contrast
+        const backgroundHeight = Math.max(120, topics.length * 40 + 20);
+        this.optionsBackground = this.add.rectangle(400, 480, 600, backgroundHeight, 0x000000, 0.7);
+
         topics.forEach((topic, index) => {
-            const yPos = 380 + (index * 30);
+            const yPos = 450 + (index * 35);
             
             const button = this.add.text(400, yPos, `${index + 1}. ${topic}`, {
-                fontSize: '16px',
+                fontSize: '20px',
                 fill: '#ffffff',
                 fontFamily: 'Arial'
             }).setOrigin(0.5);
@@ -1468,8 +1473,9 @@ class TherapySessionScene extends Phaser.Scene {
     }
     
     createInteractionOptions() {
-        // Clear previous response buttons
+        // Clear previous response buttons and background
         this.responseButtons.forEach(button => button.destroy());
+        if (this.optionsBackground) this.optionsBackground.destroy();
         this.responseButtons = [];
         
         const options = [
@@ -1478,11 +1484,14 @@ class TherapySessionScene extends Phaser.Scene {
             "Propose Insight"
         ];
 
+        // Create darker transparent background for better contrast
+        this.optionsBackground = this.add.rectangle(400, 480, 600, 120, 0x000000, 0.7);
+
         options.forEach((option, index) => {
-            const yPos = 380 + (index * 30);
+            const yPos = 450 + (index * 35);
             
             const button = this.add.text(400, yPos, `${index + 1}. ${option}`, {
-                fontSize: '16px',
+                fontSize: '20px',
                 fill: '#ffffff',
                 fontFamily: 'Arial'
             }).setOrigin(0.5);
@@ -1809,6 +1818,9 @@ class TherapySessionScene extends Phaser.Scene {
             this.typewriterTimer.destroy();
         }
         
+        // Clear previous dialogue bubble
+        this.clearDialogueBubble();
+        
         // Set typewriter as active for skip detection
         this.typewriterActive = true;
         console.log('[TYPEWRITER DEBUG] Set typewriterActive to true');
@@ -1818,9 +1830,12 @@ class TherapySessionScene extends Phaser.Scene {
         this.currentOnComplete = onComplete;
         this.currentOnSkip = onSkip || onComplete; // Use skip callback if provided, otherwise use normal callback
         
+        // Determine speaker and create dialogue bubble
+        this.createDialogueBubble(this.currentSpeaker);
+        
         // Start with empty text
-        this.dialogueText.setText('');
-        console.log('[TYPEWRITER DEBUG] Cleared dialogue text, starting timer');
+        this.currentDialogueText.setText('');
+        console.log('[TYPEWRITER DEBUG] Created dialogue bubble, starting timer');
         
         let currentIndex = 0;
         const typeSpeed = 30; // milliseconds per character
@@ -1831,7 +1846,7 @@ class TherapySessionScene extends Phaser.Scene {
                 if (currentIndex < fullText.length) {
                     // Add next character
                     const displayText = fullText.substring(0, currentIndex + 1);
-                    this.dialogueText.setText(displayText);
+                    this.currentDialogueText.setText(displayText);
                     currentIndex++;
                     if (currentIndex === 1) {
                         console.log('[TYPEWRITER DEBUG] First character displayed');
@@ -1868,7 +1883,7 @@ class TherapySessionScene extends Phaser.Scene {
             }
             
             // Display the full text immediately
-            this.dialogueText.setText(this.currentFullText);
+            this.currentDialogueText.setText(this.currentFullText);
             
             // Mark typewriter as inactive
             this.typewriterActive = false;
@@ -1883,6 +1898,72 @@ class TherapySessionScene extends Phaser.Scene {
                 // Call immediately without delay
                 callback();
             }
+        }
+    }
+    
+    createDialogueBubble(speaker) {
+        // Clear any existing bubble first
+        this.clearDialogueBubble();
+        
+        // Switch character sprites - talking character gets talking sprite, other gets sitting sprite
+        if (speaker === 'zara') {
+            this.zaraSprite.setTexture('zara-talking');
+            this.finnSprite.setTexture('finn-sitting');
+        } else {
+            this.finnSprite.setTexture('finn-talking');
+            this.zaraSprite.setTexture('zara-sitting');
+        }
+        
+        // Determine position based on speaker
+        let bubbleX, bubbleY;
+        if (speaker === 'zara') {
+            bubbleX = 200;
+            bubbleY = 150; // Above Zara
+        } else {
+            bubbleX = 600;
+            bubbleY = 150; // Above Finn
+        }
+        
+        // Create bubble background
+        this.currentDialogueBubble = this.add.graphics();
+        this.currentDialogueBubble.fillStyle(0xffffff, 0.95);
+        this.currentDialogueBubble.lineStyle(2, 0x333333);
+        this.currentDialogueBubble.fillRoundedRect(bubbleX - 150, bubbleY - 40, 300, 80, 10);
+        this.currentDialogueBubble.strokeRoundedRect(bubbleX - 150, bubbleY - 40, 300, 80, 10);
+        
+        // Create bubble tail pointing to character
+        this.currentDialogueBubble.fillTriangle(
+            bubbleX - 10, bubbleY + 40,
+            bubbleX + 10, bubbleY + 40,
+            bubbleX, bubbleY + 60
+        );
+        
+        // Create text (left-aligned to prevent shifting during typewriter effect)
+        this.currentDialogueText = this.add.text(bubbleX - 140, bubbleY - 30, '', {
+            fontSize: '16px',
+            fill: '#333333',
+            fontFamily: 'Arial',
+            wordWrap: { width: 280 },
+            align: 'left'
+        }).setOrigin(0, 0);
+    }
+    
+    clearDialogueBubble() {
+        if (this.currentDialogueBubble) {
+            this.currentDialogueBubble.destroy();
+            this.currentDialogueBubble = null;
+        }
+        if (this.currentDialogueText) {
+            this.currentDialogueText.destroy();
+            this.currentDialogueText = null;
+        }
+        
+        // Reset both characters to sitting sprites when dialogue ends
+        if (this.zaraSprite) {
+            this.zaraSprite.setTexture('zara-sitting');
+        }
+        if (this.finnSprite) {
+            this.finnSprite.setTexture('finn-sitting');
         }
     }
     
