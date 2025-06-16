@@ -1361,10 +1361,10 @@ class TherapySessionScene extends Phaser.Scene {
         this.typewriterActive = false;
         console.log('[SCENE DEBUG] TherapySession create() - initialized flags');
         
-        // Start session with topic selection after a small delay to ensure scene is ready
+        // Start session with interaction options after a small delay to ensure scene is ready
         this.time.delayedCall(100, () => {
             console.log('[SCENE DEBUG] Starting snippet-based session');
-            this.showTopicSelection();
+            this.createInteractionOptions();
         });
         
         // Set up keyboard controls
@@ -1565,9 +1565,16 @@ class TherapySessionScene extends Phaser.Scene {
     openNotesInterface() {
         console.log('[NOTES DEBUG] Opening notes interface');
         
-        // Create notes overlay
+        // Create notes overlay with error handling
         this.notesOverlay = this.add.rectangle(400, 300, 750, 500, 0x2c3e50, 0.95);
-        this.notesOverlay.setStroke(0xecf0f1, 2);
+        try {
+            this.notesOverlay.setStrokeStyle(2, 0xecf0f1);
+        } catch (error) {
+            console.warn('[NOTES DEBUG] setStrokeStyle failed, using alternative border approach:', error);
+            // Alternative: create a border rectangle
+            this.notesBorder = this.add.rectangle(400, 300, 754, 504, 0xecf0f1);
+            this.notesBorder.setDepth(this.notesOverlay.depth - 1);
+        }
         
         // Notes title
         this.notesTitle = this.add.text(400, 80, 'Session Notes', {
@@ -1610,6 +1617,7 @@ class TherapySessionScene extends Phaser.Scene {
         
         // Remove notes UI elements
         if (this.notesOverlay) this.notesOverlay.destroy();
+        if (this.notesBorder) this.notesBorder.destroy();
         if (this.notesTitle) this.notesTitle.destroy();
         if (this.notesText) this.notesText.destroy();
         if (this.closeNotesButton) this.closeNotesButton.destroy();
@@ -1637,53 +1645,6 @@ class TherapySessionScene extends Phaser.Scene {
                 button.setColor(newColor);
             }
         });
-        
-        responses.forEach((response, index) => {
-            const yPos = 380 + (index * 25);
-            console.log('[RESPONSE DEBUG] Creating button', index, 'at position X:400, Y:', yPos);
-            
-            // Create text without problematic style properties first
-            const button = this.add.text(400, yPos, `${index + 1}. ${response}`, {
-                fontSize: '18px',
-                fill: '#ffffff',
-                fontFamily: 'Arial'
-            }).setOrigin(0.5);
-            
-            // Apply background styling separately
-            button.setBackgroundColor('#000000');
-            button.setPadding(12, 8, 12, 8);
-
-            // Comprehensive button debugging
-            console.log('[RESPONSE DEBUG] Button', index, 'created with properties:', {
-                x: button.x,
-                y: button.y,
-                width: button.width,
-                height: button.height,
-                visible: button.visible,
-                active: button.active,
-                depth: button.depth,
-                text: button.text,
-                style: button.style
-            });
-
-            // Force visibility and depth
-            button.setVisible(true);
-            button.setActive(true);
-            button.setDepth(1000); // Put on top of everything
-            
-            button.setInteractive();
-            button.on('pointerdown', () => {
-                console.log('[RESPONSE DEBUG] Button', index, 'clicked!');
-                // OLD METHOD REMOVED - handleResponse no longer exists
-            });
-            
-            this.responseButtons.push(button);
-            console.log('[RESPONSE DEBUG] Button', index, 'added to responseButtons array. Array length now:', this.responseButtons.length);
-        });
-        
-        this.selectedResponse = 0;
-        this.awaitingInput = true;
-        this.updateInteractionSelection();
     }
     
     updateResponseSelection() {
@@ -2004,7 +1965,10 @@ class TherapySessionScene extends Phaser.Scene {
         }
         
         if (this.enterKey.justDown) {
-            // OLD METHOD REMOVED - handleResponse no longer exists
+            if (this.awaitingInput && this.responseButtons[this.selectedResponse]) {
+                // Trigger the selected button programmatically
+                this.responseButtons[this.selectedResponse].emit('pointerdown');
+            }
         }
         
         // Controller input
@@ -2043,7 +2007,18 @@ class TherapySessionScene extends Phaser.Scene {
                 const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
                                 globalInput.wasNamedButtonJustPressed(gamepad, 'A');
                 if (aPressed) {
-                    // OLD METHOD REMOVED - handleResponse no longer exists
+                    if (this.awaitingInput && this.responseButtons[this.selectedResponse]) {
+                        // Trigger the selected button programmatically
+                        this.responseButtons[this.selectedResponse].emit('pointerdown');
+                    }
+                }
+                
+                // B button to go back to previous scene - reliable detection
+                const bPressed = globalInput.wasButtonJustPressed(gamepad, 1) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'B');
+                if (bPressed) {
+                    console.log('[SCENE DEBUG] B button pressed in TherapySessionScene');
+                    safeSceneTransition(this, 'PatientFilesScene');
                 }
             }
         }

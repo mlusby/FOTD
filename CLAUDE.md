@@ -44,6 +44,10 @@ npm run dev
 # No build process yet - using CDN Phaser.js
 ```
 
+## Testing Instructions
+
+**IMPORTANT**: Do not run `npm run dev` automatically. Instead, ask the user to run the development server and provide specific testing instructions for what to verify.
+
 ## Current Issues (Session 2025-06-14)
 
 **BLOCKING BUGS**:
