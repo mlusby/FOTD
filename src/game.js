@@ -1513,21 +1513,23 @@ class TherapySessionScene extends Phaser.Scene {
         console.log('[INTERACTION DEBUG] Selected option:', optionIndex);
         
         this.awaitingInput = false;
-        this.interactionCount++;
-        this.interactionText.setText(`Interactions: ${this.interactionCount}/${this.maxInteractions}`);
 
         // Clear response buttons
         this.responseButtons.forEach(button => button.destroy());
         this.responseButtons = [];
 
         switch(optionIndex) {
-            case 0: // Gather More Information
+            case 0: // Gather More Information - counts as interaction
+                this.interactionCount++;
+                this.interactionText.setText(`Interactions: ${this.interactionCount}/${this.maxInteractions}`);
                 this.gatherMoreInformation();
                 break;
-            case 1: // Review Notes
+            case 1: // Review Notes - does NOT count as interaction
                 this.openNotesInterface();
                 break;
-            case 2: // Propose Insight
+            case 2: // Propose Insight - counts as interaction
+                this.interactionCount++;
+                this.interactionText.setText(`Interactions: ${this.interactionCount}/${this.maxInteractions}`);
                 this.openInsightInterface();
                 break;
         }
