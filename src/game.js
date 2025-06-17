@@ -949,8 +949,12 @@ class LobbyScene extends Phaser.Scene {
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
-        // Create player character at the left side of the lobby
-        this.player = this.add.image(100, 400, 'player-idle');
+        // Determine starting position based on how we entered this scene
+        const fromOffice = this.scene.settings.data && this.scene.settings.data.fromOffice;
+        const startX = fromOffice ? 600 : 100; // Start safely outside office trigger (x=650) when coming from office, otherwise at left side
+        
+        // Create player character
+        this.player = this.add.image(startX, 400, 'player-idle');
         this.player.setDisplaySize(200, 200);
         
         // Force premultiplied alpha off to handle transparency properly
@@ -1264,7 +1268,7 @@ class TherapyOfficeScene extends Phaser.Scene {
     goBack() {
         if (!globalInput.canAcceptInput()) return;
         console.log('[SCENE DEBUG] TherapyOfficeScene goBack() called');
-        safeSceneTransition(this, 'MainMenuScene');
+        this.scene.start('LobbyScene', { fromOffice: true });
     }
 
     update() {
