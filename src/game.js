@@ -840,7 +840,7 @@ class MainMenuScene extends Phaser.Scene {
         console.log('Selected option:', index, this.menuOptions[index]);
         
         if (index === 0) {
-            this.scene.start('TherapyOfficeScene');
+            this.scene.start('LobbyScene');
         } else {
             console.log('Dummy option selected:', this.menuOptions[index]);
         }
@@ -903,6 +903,165 @@ class MainMenuScene extends Phaser.Scene {
                     console.log('A button just pressed, calling selectOption');
                     this.selectOption(this.selectedOption);
                 }
+            }
+        }
+    }
+}
+
+class LobbyScene extends Phaser.Scene {
+    constructor() {
+        super({ key: 'LobbyScene' });
+        this.player = null;
+        this.cursors = null;
+        this.walkingRight = false; // Track walking direction
+    }
+
+    preload() {
+        this.load.image('lobby-background', 'assets/images/LobbyBackground.png');
+        
+        // Load individual walking frames with cross-origin policy for transparency
+        this.load.image('player-walk-left-1', 'assets/images/PlayerWalkLeft1.png');
+        this.load.image('player-walk-left-2', 'assets/images/PlayerWalkLeft2.png');
+        this.load.image('player-walk-left-3', 'assets/images/PlayerWalkLeft3.png');
+        this.load.image('player-walk-left-4', 'assets/images/PlayerWalkLeft4.png');
+        
+        this.load.image('player-walk-right-1', 'assets/images/PlayerWalkRight1.png');
+        this.load.image('player-walk-right-2', 'assets/images/PlayerWalkRight2.png');
+        this.load.image('player-walk-right-3', 'assets/images/PlayerWalkRight3.png');
+        this.load.image('player-walk-right-4', 'assets/images/PlayerWalkRight4.png');
+        
+        this.load.image('player-idle', 'assets/images/PlayerIdle.png');
+        
+        // Debug transparency issues
+        this.load.on('filecomplete-image-player-walk-right-2', () => {
+            console.log('[DEBUG] PlayerWalkRight2.png loaded successfully');
+        });
+    }
+
+    create() {
+        // Lobby background
+        this.add.image(400, 300, 'lobby-background').setDisplaySize(800, 600);
+        
+        // Title
+        this.add.text(400, 50, 'Office Building Lobby', {
+            fontSize: '24px',
+            fill: '#ecf0f1',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+
+        // Create player character at the left side of the lobby
+        this.player = this.add.image(100, 400, 'player-idle');
+        this.player.setDisplaySize(200, 200);
+        
+        // Force premultiplied alpha off to handle transparency properly
+        if (this.player.texture && this.player.texture.source) {
+            this.player.texture.source[0].premultipliedAlpha = false;
+        }
+
+        // Animation variables for individual frame cycling
+        this.animationFrame = 0;
+        this.animationTimer = 0;
+        this.animationSpeed = 8; // frames per second
+        this.walkingFrames = ['player-walk-left-1', 'player-walk-left-2', 'player-walk-left-3', 'player-walk-left-4'];
+        this.rightWalkingFrames = ['player-walk-right-1', 'player-walk-right-2', 'player-walk-right-3', 'player-walk-right-4'];
+
+        // Create office door trigger area on the right side
+        this.officeDoor = this.add.rectangle(700, 400, 50, 100, 0x8b4513, 0.3); // Brown transparent door
+        this.add.text(700, 350, 'Office Door', {
+            fontSize: '16px',
+            fill: '#8b4513',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+
+        // Instructions
+        this.add.text(400, 550, 'Xbox Controller: Left stick or D-pad to walk, walk to office door to enter', {
+            fontSize: '16px',
+            fill: '#95a5a6',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+
+        // Set up keyboard controls
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.wasdKeys = this.input.keyboard.addKeys('W,S,A,D');
+    }
+
+    update() {
+        let isMoving = false;
+        let velocityX = 0;
+
+        // Keyboard controls
+        if (this.cursors.left.isDown || this.wasdKeys.A.isDown) {
+            velocityX = -150;
+            isMoving = true;
+            this.walkingRight = false;
+        } else if (this.cursors.right.isDown || this.wasdKeys.D.isDown) {
+            velocityX = 150;
+            isMoving = true;
+            this.walkingRight = true;
+        }
+
+        // Controller input
+        if (this.input.gamepad.total) {
+            const gamepad = this.input.gamepad.getPad(0);
+            if (gamepad) {
+                // Left stick or D-pad horizontal movement
+                const leftStickX = gamepad.leftStick ? gamepad.leftStick.x : 0;
+                const dpadLeft = gamepad.buttons[14] ? gamepad.buttons[14].pressed : false;
+                const dpadRight = gamepad.buttons[15] ? gamepad.buttons[15].pressed : false;
+
+                if (Math.abs(leftStickX) > 0.3 || dpadLeft || dpadRight) {
+                    if (leftStickX < -0.3 || dpadLeft) {
+                        velocityX = -150;
+                        isMoving = true;
+                        this.walkingRight = false;
+                    } else if (leftStickX > 0.3 || dpadRight) {
+                        velocityX = 150;
+                        isMoving = true;
+                        this.walkingRight = true;
+                    }
+                }
+            }
+        }
+
+        // Apply movement and keep player within bounds
+        if (velocityX !== 0) {
+            this.player.x += velocityX * (1/60); // Assuming 60 FPS
+            this.player.x = Phaser.Math.Clamp(this.player.x, 50, 750);
+        }
+
+        // Handle animations with individual frames
+        if (isMoving) {
+            // Update animation timer
+            this.animationTimer += 1 / 60; // Assuming 60 FPS
+            
+            if (this.animationTimer >= 1 / this.animationSpeed) {
+                this.animationTimer = 0;
+                this.animationFrame = (this.animationFrame + 1) % 4; // Cycle through 4 frames
+            }
+            
+            // Set appropriate walking frame based on direction
+            if (this.walkingRight) {
+                this.player.setTexture(this.rightWalkingFrames[this.animationFrame]);
+            } else {
+                this.player.setTexture(this.walkingFrames[this.animationFrame]);
+            }
+            
+            // Force transparency handling on texture change
+            if (this.player.texture && this.player.texture.source) {
+                this.player.texture.source[0].premultipliedAlpha = false;
+            }
+        } else {
+            // Return to idle when not moving
+            this.player.setTexture('player-idle');
+            this.animationFrame = 0;
+            this.animationTimer = 0;
+        }
+
+        // Check if player reached the office door
+        if (this.player.x >= 650) { // Near the office door
+            if (globalInput.canAcceptInput()) {
+                console.log('[LOBBY DEBUG] Player reached office door, transitioning to office');
+                safeSceneTransition(this, 'TherapyOfficeScene');
             }
         }
     }
@@ -2213,9 +2372,13 @@ const config = {
     height: 600,
     parent: 'game-container',
     backgroundColor: '#2c3e50',
-    scene: [MainMenuScene, TherapyOfficeScene, PatientFilesScene, TherapySessionScene, SessionReviewScene],
+    scene: [MainMenuScene, LobbyScene, TherapyOfficeScene, PatientFilesScene, TherapySessionScene, SessionReviewScene],
     input: {
         gamepad: true
+    },
+    render: {
+        premultipliedAlpha: false,
+        transparent: true
     }
 };
 
