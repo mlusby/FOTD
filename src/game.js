@@ -699,12 +699,18 @@ class MainMenuScene extends Phaser.Scene {
             this.updateSelection();
         });
 
-        // Controller instructions
-        this.add.text(400, 550, 'Xbox Controller: D-pad to navigate, A to select', {
+        // Button indicators in lower right corner
+        this.add.circle(720, 550, 15, 0x4CAF50);
+        this.add.text(720, 550, 'A', {
             fontSize: '16px',
-            fill: '#95a5a6',
-            fontFamily: 'Arial',
-            wordWrap: { width: 0 }  // Disable word wrapping
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        this.add.text(720, 575, 'Select', {
+            fontSize: '12px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
         }).setOrigin(0.5);
 
         // Set up gamepad support with immediate detection
@@ -971,18 +977,25 @@ class LobbyScene extends Phaser.Scene {
 
         // Create office door trigger area on the right side
         this.officeDoor = this.add.rectangle(700, 400, 50, 100, 0x8b4513, 0.3); // Brown transparent door
-        this.add.text(700, 350, 'Office Door', {
-            fontSize: '16px',
-            fill: '#8b4513',
-            fontFamily: 'Arial'
-        }).setOrigin(0.5);
 
-        // Instructions
-        this.add.text(400, 550, 'Xbox Controller: Left stick or D-pad to walk, walk to office door to enter', {
+        // Create contextual button indicators (initially hidden)
+        this.aButton = this.add.circle(720, 550, 15, 0x4CAF50);
+        this.aButtonText = this.add.text(720, 550, 'A', {
             fontSize: '16px',
-            fill: '#95a5a6',
+            fill: '#ffffff',
             fontFamily: 'Arial'
         }).setOrigin(0.5);
+        
+        this.aActionText = this.add.text(720, 575, 'Enter', {
+            fontSize: '12px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        // Hide A button initially
+        this.aButton.setVisible(false);
+        this.aButtonText.setVisible(false);
+        this.aActionText.setVisible(false);
 
         // Set up keyboard controls
         this.cursors = this.input.keyboard.createCursorKeys();
@@ -1061,11 +1074,24 @@ class LobbyScene extends Phaser.Scene {
             this.animationTimer = 0;
         }
 
-        // Check if player reached the office door
-        if (this.player.x >= 650) { // Near the office door
-            if (globalInput.canAcceptInput()) {
-                console.log('[LOBBY DEBUG] Player reached office door, transitioning to office');
-                safeSceneTransition(this, 'TherapyOfficeScene');
+        // Check if player is near the office door (within trigger distance)
+        const nearOffice = this.player.x >= 700; // Near the office area
+        
+        // Show/hide A button based on proximity
+        this.aButton.setVisible(nearOffice);
+        this.aButtonText.setVisible(nearOffice);
+        this.aActionText.setVisible(nearOffice);
+        
+        // Handle A button press for office entry
+        if (nearOffice && this.input.gamepad.total) {
+            const gamepad = this.input.gamepad.getPad(0);
+            if (gamepad) {
+                const aPressed = globalInput.wasButtonJustPressed(gamepad, 0) || 
+                                globalInput.wasNamedButtonJustPressed(gamepad, 'A');
+                if (aPressed && globalInput.canAcceptInput()) {
+                    console.log('[LOBBY DEBUG] A button pressed near office, transitioning');
+                    safeSceneTransition(this, 'TherapyOfficeScene');
+                }
             }
         }
     }
@@ -1134,10 +1160,30 @@ class TherapyOfficeScene extends Phaser.Scene {
             this.updateSelection();
         });
 
-        // Instructions
-        this.add.text(400, 550, 'Xbox Controller: D-pad to navigate, A to select, B to go back', {
+        // Button indicators in lower right corner
+        this.add.circle(700, 550, 15, 0x4CAF50);
+        this.add.text(700, 550, 'A', {
             fontSize: '16px',
-            fill: '#95a5a6',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        this.add.text(700, 575, 'Select', {
+            fontSize: '12px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        this.add.circle(750, 550, 15, 0xf44336);
+        this.add.text(750, 550, 'B', {
+            fontSize: '16px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        this.add.text(750, 575, 'Back', {
+            fontSize: '12px',
+            fill: '#ffffff',
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
@@ -1408,10 +1454,17 @@ class PatientFilesScene extends Phaser.Scene {
         backButton.setInteractive();
         backButton.on('pointerdown', () => this.goBack());
 
-        // Instructions
-        this.add.text(400, 550, 'Xbox Controller: B to go back', {
+        // Button indicators in lower right corner
+        this.add.circle(750, 550, 15, 0xf44336);
+        this.add.text(750, 550, 'B', {
             fontSize: '16px',
-            fill: '#95a5a6',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        this.add.text(750, 575, 'Back', {
+            fontSize: '12px',
+            fill: '#ffffff',
             fontFamily: 'Arial'
         }).setOrigin(0.5);
 
@@ -1495,18 +1548,7 @@ class TherapySessionScene extends Phaser.Scene {
 
         // Character sprites positioned farther apart on the couch (reduced to 80% of 3x size)
         this.zaraSprite = this.add.image(200, 350, 'zara-sitting').setDisplaySize(288, 360); // Zara on far left
-        this.add.text(200, 530, 'Zara (Dragon)', {
-            fontSize: '16px',
-            fill: '#ecf0f1',
-            fontFamily: 'Arial'
-        }).setOrigin(0.5);
-
-        this.finnSprite = this.add.image(600, 350, 'finn-sitting').setDisplaySize(288, 360); // Finn on far right  
-        this.add.text(600, 530, 'Finn (Human)', {
-            fontSize: '16px',
-            fill: '#ecf0f1',
-            fontFamily: 'Arial'
-        }).setOrigin(0.5);
+        this.finnSprite = this.add.image(600, 350, 'finn-sitting').setDisplaySize(288, 360); // Finn on far right
 
         // Interaction counter
         this.interactionText = this.add.text(700, 100, `Interactions: ${this.interactionCount}/${this.maxInteractions}`, {
@@ -1775,9 +1817,23 @@ class TherapySessionScene extends Phaser.Scene {
         });
         
         // Close button
-        this.closeNotesButton = this.add.text(400, 520, 'Close Notes (Press any key)', {
+        this.closeNotesButton = this.add.text(400, 520, 'Close Notes', {
             fontSize: '16px',
             fill: '#3498db',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        // Button indicators in lower right corner - only show B since both A and B close
+        this.add.circle(750, 550, 15, 0xf44336);
+        this.add.text(750, 550, 'B', {
+            fontSize: '16px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        this.add.text(750, 575, 'Close', {
+            fontSize: '12px',
+            fill: '#ffffff',
             fontFamily: 'Arial'
         }).setOrigin(0.5);
         
@@ -2264,7 +2320,7 @@ class TherapySessionScene extends Phaser.Scene {
                                 globalInput.wasNamedButtonJustPressed(gamepad, 'B');
                 if (bPressed) {
                     console.log('[SCENE DEBUG] B button pressed in TherapySessionScene');
-                    safeSceneTransition(this, 'PatientFilesScene');
+                    safeSceneTransition(this, 'TherapyOfficeScene');
                 }
             }
         }
@@ -2336,6 +2392,20 @@ class SessionReviewScene extends Phaser.Scene {
                 safeSceneTransition(this, 'TherapyOfficeScene');
             }
         });
+        
+        // Button indicators in lower right corner - only show B since both A and B return
+        this.add.circle(750, 550, 15, 0xf44336);
+        this.add.text(750, 550, 'B', {
+            fontSize: '16px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
+        
+        this.add.text(750, 575, 'Return', {
+            fontSize: '12px',
+            fill: '#ffffff',
+            fontFamily: 'Arial'
+        }).setOrigin(0.5);
         
         // Set up keyboard controls
         this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);

@@ -99,3 +99,13 @@
 - Local server: `npm run dev` (http://localhost:8080)
 - Controller: Xbox Wireless Controller confirmed connected
 - Browser: Working with Phaser 3.70.0 via CDN
+
+## Session 2025-06-15 09:45
+
+**Interaction 1** - 09:45  
+**Tokens**: ~400 input, ~500 output  
+**Summary**: User requested analysis of TypeError involving `notesOverlay.setStroke` method. Located `openNotesInterface` method at line 1565 in `/Users/marklusby/Code/FOTD/src/game.js` where `notesOverlay` is created as `this.add.rectangle()` on line 1569, and `setStroke()` is called on line 1570. The issue is that `this.add.rectangle()` returns a Phaser Rectangle GameObject which should support `setStroke()` method. Analysis complete.
+
+**Interaction 2** - 15:30  
+**Tokens**: ~200 input, ~800 output  
+**Summary**: User requested location of `startTypewriterEffect` method in TherapySessionScene and identification of where dialogue text is cleared. Found method at line 1811 that currently uses old dialogue box system (`this.dialogueText.setText()`), but `this.dialogueText` is never created in scene. Method needs updating to create dialogue bubbles above speaking characters instead. Current implementation has dialogue bubble properties initialized as null at lines 1354-1355 but never used.
